@@ -29,10 +29,7 @@ pub fn validate_email(email: &str) -> Result<(), (StatusCode, String)> {
     }
     let parts: Vec<&str> = email.split('@').collect();
     if parts.len() != 2 || parts[0].is_empty() || !parts[1].contains('.') {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Invalid email address".to_string(),
-        ));
+        return Err((StatusCode::BAD_REQUEST, "Invalid email address".to_string()));
     }
     Ok(())
 }
@@ -45,10 +42,7 @@ pub fn validate_password(password: &str) -> Result<(), (StatusCode, String)> {
         ));
     }
     if password.len() > 128 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Password too long".to_string(),
-        ));
+        return Err((StatusCode::BAD_REQUEST, "Password too long".to_string()));
     }
     if !password.chars().any(|c| c.is_numeric()) {
         return Err((
@@ -88,7 +82,10 @@ pub fn validate_channel_name(name: &str) -> Result<(), (StatusCode, String)> {
             "Channel name must be between 1 and 100 characters".to_string(),
         ));
     }
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ') {
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ')
+    {
         return Err((
             StatusCode::BAD_REQUEST,
             "Channel name contains invalid characters".to_string(),

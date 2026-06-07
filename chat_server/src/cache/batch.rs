@@ -1,8 +1,11 @@
 // src/cache/batch
 
-use redis::{Client, pipe, AsyncCommands};
+use redis::{AsyncCommands, Client, pipe};
 
-pub async fn batch_update_presence(client: &Client, user_ids: &[u64]) -> Result<(), redis::RedisError> {
+pub async fn batch_update_presence(
+    client: &Client,
+    user_ids: &[u64],
+) -> Result<(), redis::RedisError> {
     let mut con = client.get_connection_manager().await?;
     let mut pipeline = pipe();
     for &user_id in user_ids {

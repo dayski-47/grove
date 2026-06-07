@@ -1,13 +1,13 @@
 // src/websocket/handler.rs
 
-use futures_util::{StreamExt, SinkExt};
-use tokio_tungstenite::tungstenite::Message as WsMessage;
-use std::sync::Arc;
-use crate::websocket::state::ServerState;
-use crate::protocol::message::Message;
 use crate::api::AppState;
-use redis::AsyncCommands;
 use crate::api::validation::validate_message_text;
+use crate::protocol::message::Message;
+use crate::websocket::state::ServerState;
+use futures_util::{SinkExt, StreamExt};
+use redis::AsyncCommands;
+use std::sync::Arc;
+use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 pub async fn handle_connection(
     ws_stream: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
@@ -60,7 +60,6 @@ pub async fn handle_binary_message(
     let msg = Message::parse(data)?;
     let text = msg.text()?;
 
-
     if validate_message_text(text).is_err() {
         return Ok(());
     }
@@ -72,7 +71,8 @@ pub async fn handle_binary_message(
         user_id,
         text,
         msg.header.timestamp,
-    ).await?;
+    )
+    .await?;
 
     // Get channel members from Redis
     let mut con = app_state.redis.get_connection_manager().await?;

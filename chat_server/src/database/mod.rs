@@ -2,7 +2,7 @@
 
 pub mod messages;
 
-use sqlx::postgres::{PgPoolOptions, PgPool};
+use sqlx::postgres::{PgPool, PgPoolOptions};
 
 pub async fn connect_db(database_url: &str) -> Result<PgPool, sqlx::Error> {
     let pool = PgPoolOptions::new()
@@ -11,11 +11,8 @@ pub async fn connect_db(database_url: &str) -> Result<PgPool, sqlx::Error> {
         .await?;
 
     println!("Running migrations...");
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
     println!("Migrations Complete");
-        
 
     Ok(pool)
 }

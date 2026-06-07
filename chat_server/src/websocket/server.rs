@@ -1,12 +1,12 @@
 // src/websocket/server.rs
 
-use tokio::net::TcpListener;
-use std::sync::Arc;
-use crate::websocket::state::ServerState;
-use crate::websocket::handler::handle_connection;
-use jsonwebtoken::{decode, DecodingKey, Validation};
-use crate::api::auth::Claims;
 use crate::api::AppState;
+use crate::api::auth::Claims;
+use crate::websocket::handler::handle_connection;
+use crate::websocket::state::ServerState;
+use jsonwebtoken::{DecodingKey, Validation, decode};
+use std::sync::Arc;
+use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 
 pub async fn run_websocket_server(
@@ -30,7 +30,8 @@ pub async fn run_websocket_server(
                 stream,
                 move |req: &Request, response: Response| {
                     let query = req.uri().query().unwrap_or("");
-                    let token = query.split('&')
+                    let token = query
+                        .split('&')
                         .find(|p| p.starts_with("token="))
                         .and_then(|p| p.strip_prefix("token="));
 
@@ -50,18 +51,17 @@ pub async fn run_websocket_server(
                         .body(Some("Unauthorized".to_string()))
                         .unwrap())
                 },
-            ).await;
+            )
+            .await;
 
             match ws_result {
                 Ok(ws_stream) => {
                     let uid = user_id.lock().unwrap().unwrap_or(0) as u64;
                     if uid > 0 {
-                        if let Err(e) = handle_connection(
-                            ws_stream,
-                            server_state,
-                            Arc::clone(&app_state),
-                            uid,
-                        ).await {
+                        if let Err(e) =
+                            handle_connection(ws_stream, server_state, Arc::clone(&app_state), uid)
+                                .await
+                        {
                             eprintln!("Connection error {}: {}", peer_addr, e);
                         }
                     }

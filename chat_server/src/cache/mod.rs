@@ -3,7 +3,7 @@
 pub mod batch;
 pub mod presence;
 
-use redis::{Client, RedisError, AsyncCommands};
+use redis::{AsyncCommands, Client, RedisError};
 
 pub async fn connect_redis(redis_url: &str) -> Result<Client, RedisError> {
     let client = Client::open(redis_url)?;

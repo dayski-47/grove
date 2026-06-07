@@ -17,18 +17,20 @@ impl ServerState {
     pub fn new() -> Self {
         Self {
             connections: RwLock::new(HashMap::new()),
-            channels: RwLock::new(HashMap::new()), 
+            channels: RwLock::new(HashMap::new()),
         }
     }
 
     pub fn add_connection(&self, user_id: UserId, tx: mpsc::UnboundedSender<WsMessage>) {
-        self.connections.write().unwrap().insert(user_id, tx); 
+        self.connections.write().unwrap().insert(user_id, tx);
     }
 
     pub fn get_channel_members(&self, channel_id: ChannelId) -> Vec<UserId> {
-        self.channels.read().unwrap().get(&channel_id).cloned().unwrap_or_default()
-
-        
+        self.channels
+            .read()
+            .unwrap()
+            .get(&channel_id)
+            .cloned()
+            .unwrap_or_default()
     }
-
 }

@@ -1,20 +1,19 @@
 // src/api/mod.rs
 
-pub mod server;
 pub mod auth;
 pub mod messages;
-pub mod validation;
 pub mod ratelimit;
+pub mod server;
+pub mod validation;
 
-use sqlx::PgPool;
-use redis::Client;
-use jsonwebtoken::{decode, DecodingKey, Validation};
-use axum::extract::FromRequestParts;
-use axum::http::request::Parts;
-use axum::http::StatusCode;
-use std::sync::Arc;
 use crate::api::auth::Claims;
-
+use axum::extract::FromRequestParts;
+use axum::http::StatusCode;
+use axum::http::request::Parts;
+use jsonwebtoken::{DecodingKey, Validation, decode};
+use redis::Client;
+use sqlx::PgPool;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -22,7 +21,6 @@ pub struct AppState {
     pub redis: Client,
     pub jwt_secret: String,
 }
-
 
 pub struct AuthenticatedUser {
     pub user_id: i64,
@@ -40,7 +38,7 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedUser {
             .get("Authorization")
             .and_then(|v| v.to_str().ok())
             .ok_or(StatusCode::UNAUTHORIZED)?;
-        
+
         let token = auth_header
             .strip_prefix("Bearer ")
             .ok_or(StatusCode::UNAUTHORIZED)?;
@@ -55,8 +53,5 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedUser {
         Ok(AuthenticatedUser {
             user_id: token_data.claims.sub,
         })
-        
     }
 }
-
-

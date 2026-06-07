@@ -1,6 +1,6 @@
 // src/cache/presence.rs
 
-use redis::{Client, AsyncCommands};
+use redis::{AsyncCommands, Client};
 
 pub struct PresenceTracker {
     client: Client,

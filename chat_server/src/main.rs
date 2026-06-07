@@ -1,11 +1,11 @@
 // src/main.rs
-mod database;
-mod protocol;
-mod memory;
-mod cache;
 mod api;
-mod websocket;
+mod cache;
+mod database;
+mod memory;
+mod protocol;
 mod signaling;
+mod websocket;
 
 use std::sync::Arc;
 // use api::server::create_router;
@@ -17,15 +17,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     dotenvy::dotenv().ok();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
-    
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    let redis_url = std::env::var("REDIS_URL")
-        .expect("REDIS_URL must be set");
+    let redis_url = std::env::var("REDIS_URL").expect("REDIS_URL must be set");
 
-    let jwt_secret = std::env::var("JWT_SECRET")
-        .expect("JWT_SECRET must be set");
+    let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
 
     let db_pool = database::connect_db(&database_url).await?;
     println!("Connected to PostgreSQL");
@@ -38,18 +34,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         redis: redis_client,
         jwt_secret: jwt_secret,
     };
-    
+
     let app_state_ws = Arc::new(app_state.clone());
 
-    let rest_handle = tokio::spawn(async move {
-        api::server::run_rest_server("0.0.0.0:8080", app_state).await
-    });
+    let rest_handle =
+        tokio::spawn(async move { api::server::run_rest_server("0.0.0.0:8080", app_state).await });
 
     let ws_handle = tokio::spawn(async move {
-        websocket::server::run_websocket_server(
-            "0.0.0.0:8081",
-            app_state_ws
-        ).await
+        websocket::server::run_websocket_server("0.0.0.0:8081", app_state_ws).await
     });
 
     println!("Grove is running!");
@@ -57,10 +49,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("WebSocket: ws://0.0.0.0:8081");
 
     match tokio::try_join!(rest_handle, ws_handle) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => eprintln!("Server error: {}", e),
     }
-
 
     Ok(())
 }
