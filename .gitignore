@@ -1,0 +1,21 @@
+# Rust
+chat_server/target/
+chat_server/.env
+**/*.rs.bk
+
+# Node
+grove_client/node_modules/
+grove_client/dist/
+
+# Environment — NEVER commit these
+.env
+*.env
+.env.local
+.env.production
+
+# Docker
+*.log
+
+# IDE
+.vscode/
+.idea/

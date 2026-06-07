@@ -1,0 +1,88 @@
+// src/components/ChannelSidebar.tsx
+
+import { useState } from "react";
+
+export interface Channel {
+  id: number;
+  name: string;
+}
+
+export function ChannelSidebar({
+  currentChannel,
+  channels,
+  onSelectChannel,
+  onCreateChannel,
+  onLogout,
+  connected,
+}: {
+  currentChannel: number;
+  channels: Channel[];
+  onSelectChannel: (id: number) => void;
+  onCreateChannel: (name: string) => void;
+  onLogout: () => void;
+  connected: boolean;
+}) {
+  const [newName, setNewName] = useState("");
+
+  return (
+    <aside className="grove-sidebar">
+      <div className="grove-sidebar-header">
+        <span className="grove-branch">❦</span> Grove
+        <span
+          className={
+            connected
+              ? "grove-status grove-online"
+              : "grove-status grove-offline"
+          }
+          title={connected ? "connected" : "disconnected"}
+        />
+      </div>
+
+      <div className="grove-channels">
+        {channels.map((ch) => (
+          <button
+            key={ch.id}
+            className={
+              ch.id === currentChannel
+                ? "grove-channel grove-channel-active"
+                : "grove-channel"
+            }
+            onClick={() => onSelectChannel(ch.id)}
+          >
+            ⌖ {ch.name}
+          </button>
+        ))}
+      </div>
+
+      <div className="grove-new-channel">
+        <input
+          className="grove-input grove-input-small"
+          placeholder="new grove…"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && newName.trim()) {
+              onCreateChannel(newName.trim());
+              setNewName("");
+            }
+          }}
+        />
+        <button
+          className="grove-button grove-button-small"
+          onClick={() => {
+            if (newName.trim()) {
+              onCreateChannel(newName.trim());
+              setNewName("");
+            }
+          }}
+        >
+          plant
+        </button>
+      </div>
+
+      <button className="grove-logout" onClick={onLogout}>
+        leave the grove
+      </button>
+    </aside>
+  );
+}
