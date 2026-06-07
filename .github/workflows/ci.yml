@@ -1,0 +1,90 @@
+# .github/workflows/ci.yml
+name: Grove CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Rust Backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: chat_server
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            chat_server/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('chat_server/Cargo.lock') }}
+
+      - name: Check backend
+        working-directory: chat_server
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/chat_server
+          SQLX_OFFLINE: true
+        run: cargo check
+
+      - name: Check formatting
+        working-directory: chat_server
+        run: cargo fmt --check
+
+      - name: Clippy lint
+        working-directory: chat_server
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/chat_server
+          SQLX_OFFLINE: true
+        run: cargo clippy -- -D warnings
+
+  frontend:
+    name: React Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: grove_client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: grove_client
+        run: npm ci
+
+      - name: Type check
+        working-directory: grove_client
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: grove_client
+        run: npm run build
