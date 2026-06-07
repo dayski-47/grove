@@ -4,7 +4,6 @@ use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-
 const POOL_SIZE: usize = 4096;
 const MAX_MESSAGE_SIZE: usize = 8 * 1024; // 8 KiB
 
@@ -39,9 +38,9 @@ impl MessagePool {
             if next == self.tail.load(Ordering::Acquire) {
                 return None;
             }
-            if let Ok(head) = self
-                .head
-                .compare_exchange(head, next, Ordering::Release, Ordering::Relaxed)
+            if let Ok(head) =
+                self.head
+                    .compare_exchange(head, next, Ordering::Release, Ordering::Relaxed)
             {
                 let slot = unsafe {
                     let slots = &mut *self.slots.get();
