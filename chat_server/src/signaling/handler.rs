@@ -1,5 +1,5 @@
 // src/signaling/handler.rs
-
+#![allow(dead_code)]
 use crate::signaling::types::SignalingMessage;
 use std::collections::HashMap;
 use std::sync::RwLock;

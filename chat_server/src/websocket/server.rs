@@ -9,6 +9,8 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 
+
+
 pub async fn run_websocket_server(
     addr: &str,
     app_state: Arc<AppState>,
@@ -25,7 +27,8 @@ pub async fn run_websocket_server(
             let user_id = Arc::new(std::sync::Mutex::new(None::<i64>));
             let user_id_clone = Arc::clone(&user_id);
             let secret = app_state.jwt_secret.clone();
-
+            
+            #[allow(clippy::collapsible_if, clippy::result_large_err)]
             let ws_result = tokio_tungstenite::accept_hdr_async(
                 stream,
                 move |req: &Request, response: Response| {
@@ -57,6 +60,7 @@ pub async fn run_websocket_server(
             match ws_result {
                 Ok(ws_stream) => {
                     let uid = user_id.lock().unwrap().unwrap_or(0) as u64;
+                    #[allow(clippy::collapsible_if)]
                     if uid > 0 {
                         if let Err(e) =
                             handle_connection(ws_stream, server_state, Arc::clone(&app_state), uid)

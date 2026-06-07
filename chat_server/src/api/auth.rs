@@ -98,43 +98,6 @@ pub async fn register(
     Ok(Json(AuthResponse { token, user_id }))
 }
 
-fn validate_register(req: &RegisterRequest) -> Result<(), &'static str> {
-    if req.username.len() < 3 || req.username.len() > 32 {
-        return Err("Username must be between 3 and 32 characters");
-    }
-    if !req
-        .username
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '_')
-    {
-        return Err("Username can only contain letters, numbers, and underscores");
-    }
-
-    // Email: must contain @ and a dot after it
-    let parts: Vec<&str> = req.email.split('@').collect();
-    if parts.len() != 2 || !parts[1].contains('.') {
-        return Err("Invalid email address");
-    }
-    if req.email.len() > 255 {
-        return Err("Email too long");
-    }
-
-    if req.password.len() < 8 {
-        return Err("Password must be at least 8 characters");
-    }
-    if req.password.len() > 128 {
-        return Err("Password too long");
-    }
-    if !req.password.chars().any(|c| c.is_numeric()) {
-        return Err("Password must contain at least one number");
-    }
-    if !req.password.chars().any(|c| c.is_alphabetic()) {
-        return Err("Password must contain at least one letter");
-    }
-
-    Ok(())
-}
-
 #[derive(sqlx::FromRow)]
 pub struct UserRecord {
     pub id: i64,

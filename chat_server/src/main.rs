@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_state = api::AppState {
         db: db_pool,
         redis: redis_client,
-        jwt_secret: jwt_secret,
+        jwt_secret,
     };
 
     let app_state_ws = Arc::new(app_state.clone());

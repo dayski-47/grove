@@ -1,6 +1,6 @@
 // src/cache/batch
-
-use redis::{AsyncCommands, Client, pipe};
+#![allow(dead_code)]
+use redis::{Client, pipe};
 
 pub async fn batch_update_presence(
     client: &Client,

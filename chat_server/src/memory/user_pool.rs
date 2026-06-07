@@ -1,5 +1,5 @@
 // src/memory/user_pool.rs
-
+#![allow(dead_code, non_snake_case)]
 use std::sync::atomic::AtomicU8;
 
 #[repr(transparent)]

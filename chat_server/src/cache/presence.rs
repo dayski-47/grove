@@ -1,5 +1,5 @@
 // src/cache/presence.rs
-
+#![allow(dead_code)]
 use redis::{AsyncCommands, Client};
 
 pub struct PresenceTracker {

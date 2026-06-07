@@ -1,8 +1,9 @@
 // src/memory/message_pool.rs
-
+#![allow(dead_code)]
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
 
 const POOL_SIZE: usize = 4096;
 const MAX_MESSAGE_SIZE: usize = 8 * 1024; // 8 KiB
@@ -29,27 +30,25 @@ impl MessagePool {
         }
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn alloc(&self, size: usize) -> Option<&mut [u8]> {
         loop {
             let head = self.head.load(Ordering::Acquire);
             let next = (head + 1) % POOL_SIZE;
 
-            if (next == self.tail.load(Ordering::Acquire)) {
+            if next == self.tail.load(Ordering::Acquire) {
                 return None;
             }
-            match self
+            if let Ok(head) = self
                 .head
                 .compare_exchange(head, next, Ordering::Release, Ordering::Relaxed)
             {
-                Ok(head) => {
-                    let slot = unsafe {
-                        let slots = &mut *self.slots.get();
-                        &mut *slots[head].as_mut_ptr()
-                    };
-                    slot.len = size;
-                    return Some(&mut slot.data[..size]);
-                }
-                Err(_) => {}
+                let slot = unsafe {
+                    let slots = &mut *self.slots.get();
+                    &mut *slots[head].as_mut_ptr()
+                };
+                slot.len = size;
+                return Some(&mut slot.data[..size]);
             }
         }
     }

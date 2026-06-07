@@ -1,7 +1,5 @@
 // src/protocol/message.rs
 
-use std::io;
-
 #[allow(non_snake_case)]
 pub mod MessageType {
     pub const TEXT: u8 = 0x01;

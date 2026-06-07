@@ -1,5 +1,5 @@
 // src/websocket/state.rs
-
+#![allow(dead_code)]
 use std::collections::HashMap;
 use std::sync::RwLock;
 use tokio::sync::mpsc;
