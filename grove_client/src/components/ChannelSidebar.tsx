@@ -15,7 +15,7 @@ export function ChannelSidebar({
   onLogout,
   connected,
 }: {
-  currentChannel: number;
+  currentChannel: number | null;
   channels: Channel[];
   onSelectChannel: (id: number) => void;
   onCreateChannel: (name: string) => void;

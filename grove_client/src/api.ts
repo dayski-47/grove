@@ -46,6 +46,12 @@ export interface UserProfile {
     username: string;
 }
 
+export interface ChannelInfo {
+  id: number;
+  name: string;
+}
+
+
 export async function getUser(
     userId: number,
     token: string
@@ -74,6 +80,14 @@ export function joinChannel(
     token: string
 ): Promise<void> {
     return postJson<void>("/api/channels/join", { channel_id: channelId }, token);
+}
+
+export async function listChannels(token: string): Promise<ChannelInfo[]> {
+  const res = await fetch(`${API_BASE}/api/channels`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Failed to fetch channels: ${res.status}`);
+  return (await res.json()) as ChannelInfo[];
 }
 
 export async function getHistory(

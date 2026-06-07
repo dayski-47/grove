@@ -30,6 +30,9 @@ pub async fn run_websocket_server(
             let ws_result = tokio_tungstenite::accept_hdr_async(
                 stream,
                 move |req: &Request, response: Response| {
+                    println!("WS handshake URI: {}", req.uri());
+                    println!("WS query: {:?}", req.uri().query());
+                    
                     let query = req.uri().query().unwrap_or("");
                     let token = query
                         .split('&')

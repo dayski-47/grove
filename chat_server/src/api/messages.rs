@@ -166,3 +166,23 @@ pub async fn join_channel(
 
     Ok(StatusCode::OK)
 }
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct ChannelInfo {
+    pub id: i64,
+    pub name: String,
+}
+
+pub async fn list_channels(
+    _auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<ChannelInfo>>, StatusCode> {
+    let channels = sqlx::query_as::<_, ChannelInfo>(
+        "SELECT id, name FROM channels ORDER BY id ASC"
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(channels))
+}

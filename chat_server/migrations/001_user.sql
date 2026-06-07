@@ -29,3 +29,4 @@ CREATE TABLE messages (
 -- indexes for fast queries
 CREATE INDEX idx_messages_channel ON messages(channel_id, id DESC);
 CREATE INDEX idx_messages_user ON messages(user_id);
+

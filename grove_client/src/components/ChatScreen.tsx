@@ -1,8 +1,8 @@
 // src/components/ChatScreen.tsx
 import { useEffect, useRef, useState } from "react";
 import { GroveSocket } from "../socket";
-import { getHistory, joinChannel, createChannel, getUser } from "../api";
-import type { ParsedMessage, HistoricMessage } from "../types";
+import { getHistory, joinChannel, createChannel, getUser, listChannels } from "../api";
+import type { ParsedMessage} from "../types";
 import { ChannelSidebar, type Channel } from "./ChannelSidebar";
 import { MessageList, type DisplayMessage } from "./MessageList";
 import { MessageInput } from "./MessageInput";
@@ -16,10 +16,8 @@ export function ChatScreen({
     userId: number;
     onLogout: () => void;
 }) {
-    const [channelId, setChannelId] = useState(1);
-    const [channels, setChannels]   = useState<Channel[]>([
-        { id: 1, name: "general" },
-    ]);
+    const [channelId, setChannelId] = useState<number | null>(null);
+    const [channels, setChannels] = useState<Channel[]>([]);
     const [messages, setMessages]     = useState<DisplayMessage[]>([]);
     const [connected, setConnected]   = useState(false);
     const [usernames, setUsernames]   = useState<Record<number, string>>({});
@@ -51,50 +49,56 @@ export function ChatScreen({
 
     // Open socket once on mount
     useEffect(() => {
-        const socket = new GroveSocket(
+    const socket = new GroveSocket(
         token,
         userId,
         (msg: ParsedMessage) => {
-            if (msg.channelId === channelIdRef.current) {
+        if (msg.channelId === channelIdRef.current) {
             setMessages((prev) => [
-                ...prev,
-                {
-                userId:    msg.userId,
-                text:      msg.text,
-                timestamp: msg.timestamp,
-                },
+            ...prev,
+            { userId: msg.userId, text: msg.text, timestamp: msg.timestamp },
             ]);
             resolveUsername(msg.userId);
-            }
+        }
         },
         (isConnected) => setConnected(isConnected)
-        );
-        socket.connect();
-        socketRef.current = socket;
-        return () => socket.disconnect();
-    }, [token, userId]);
+    );
+    socket.connect();
+    socketRef.current = socket;
+
+    // Fetch channel list on connect
+    listChannels(token)
+        .then((chs) => {
+        setChannels(chs.map((c) => ({ id: c.id, name: c.name })));
+        if (chs.length > 0) setChannelId(chs[0].id);
+        })
+        .catch(console.error);
+
+    return () => socket.disconnect();
+}, [token, userId]);
 
     // Load history whenever channel changes
     useEffect(() => {
-        async function load() {
-        await joinChannel(channelId, token);
-        const history: HistoricMessage[] = await getHistory(channelId, token);
-        const reversed = history.slice().reverse();
+    if (channelId === null) return;
+    async function load() {
+        await joinChannel(channelId!, token);
+        const history = await getHistory(channelId!, token);
         setMessages(
-            reversed.map((m) => ({
-            userId:    m.user_id,
-            text:      m.text,
+        history.slice().reverse().map((m) => ({
+            userId: m.user_id,
+            text: m.text,
             timestamp: m.timestamp,
             }))
         );
-        const uniqueIds = [...new Set(reversed.map((m) => m.user_id))];
+        const uniqueIds = [...new Set(history.map((m) => m.user_id))];
         uniqueIds.forEach((id) => resolveUsername(id));
         }
         load().catch(console.error);
     }, [channelId, token]);
 
     function handleSend(text: string) {
-        socketRef.current?.sendText(channelId, text);
+    if (channelId === null) return;
+    socketRef.current?.sendText(channelId, text);
     }
 
     async function handleCreateChannel(name: string) {
@@ -123,7 +127,10 @@ export function ChatScreen({
             currentUserId={userId}
             usernames={usernames}
             />
-            <MessageInput onSend={handleSend} disabled={!connected} />
+            <MessageInput 
+                onSend={handleSend} 
+                disabled={!connected || channelId === null} 
+            />
         </div>
         </div>
     );

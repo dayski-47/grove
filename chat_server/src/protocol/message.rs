@@ -1,5 +1,5 @@
 // src/protocol/message.rs
-
+#![allow(dead_code)]
 #[allow(non_snake_case)]
 pub mod MessageType {
     pub const TEXT: u8 = 0x01;

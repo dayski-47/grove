@@ -61,7 +61,7 @@ pub async fn register(
     VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(&req.username)
-    .bind(&req.email)
+    .bind(req.email.trim().to_lowercase())
     .bind(&password_hash)
     .fetch_one(&state.db)
     .await
@@ -128,6 +128,9 @@ pub async fn login(
                 )
             })?;
 
+    println!("Attempting verify for user_id: {}", user.id);
+    println!("Password bytes len: {}", req.password.len());
+    println!("Hash: {}", &user.password_hash);
     let valid = verify(req.password.as_bytes(), &user.password_hash).map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
