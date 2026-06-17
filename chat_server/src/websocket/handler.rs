@@ -287,12 +287,11 @@ pub async fn handle_binary_message(
             }
         }
 
-        // Client can set their own activity status by sending a PRESENCE frame.
-        // Valid statuses: "online", "away", "busy", "do_not_disturb"
+        // Client sends PRESENCE to update their activity status / custom status text.
+        // Format: "online" | "away" | "busy" | "do_not_disturb" | "availability|custom text"
         MessageType::PRESENCE => {
-            const VALID: &[&str] = &["online", "away", "busy", "do_not_disturb"];
             let status = text.trim();
-            if VALID.contains(&status) {
+            if !status.is_empty() && status.len() <= 80 {
                 broadcast_presence(user_id, status, state);
             }
         }

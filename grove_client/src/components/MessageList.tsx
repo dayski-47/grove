@@ -1,5 +1,5 @@
 // src/components/MessageList.tsx
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 export interface DisplayMessage {
     id?:       number;
@@ -14,6 +14,19 @@ type ReactionInfo    = { count: number; byMe: boolean };
 type ReactionsMap    = Record<number, Record<string, ReactionInfo>>;
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
+
+function renderWithMentions(text: string, myUsername: string): ReactNode {
+    const parts = text.split(/(@\w+)/g);
+    return parts.map((part, i) => {
+        if (!part.startsWith("@")) return part;
+        const isMine = part.slice(1).toLowerCase() === myUsername.toLowerCase();
+        return (
+            <span key={i} className={`grove-mention${isMine ? " grove-mention-me" : ""}`}>
+                {part}
+            </span>
+        );
+    });
+}
 
 const AVATAR_COLORS = [
     "#1a7fd4", "#2d8a3c", "#7b52c8", "#c07828",
@@ -60,7 +73,9 @@ interface MsgBodyProps {
     m:             DisplayMessage;
     isOwn:         boolean;
     name:          string;
+    myUsername:    string;
     showMeta:      boolean;
+    isPinned:      boolean;
     reactions:     Record<string, ReactionInfo> | undefined;
     editingId:     number | null;
     editText:      string;
@@ -70,13 +85,15 @@ interface MsgBodyProps {
     onStartEdit:   (id: number, text: string) => void;
     onDelete:      (id: number) => void;
     onReact:       (id: number, emoji: string) => void;
+    onPin:         (id: number) => void;
+    onUnpin:       (id: number) => void;
 }
 
 function MessageBody({
-    m, isOwn, name, showMeta,
+    m, isOwn, name, myUsername, showMeta, isPinned,
     reactions, editingId, editText,
     onEditChange, onEditSubmit, onEditCancel,
-    onStartEdit, onDelete, onReact,
+    onStartEdit, onDelete, onReact, onPin, onUnpin,
 }: MsgBodyProps) {
     const msgReactions = reactions ? Object.entries(reactions) : [];
     const isEditing    = m.id !== undefined && editingId === m.id;
@@ -109,28 +126,39 @@ function MessageBody({
                         <span className="grove-edit-hint">Enter to save · Esc to cancel</span>
                     </div>
                 ) : (
-                    <span className="grove-msg-text">{m.text}</span>
+                    <span className="grove-msg-text">
+                        {renderWithMentions(m.text, myUsername)}
+                    </span>
                 )}
                 {m.edited && !m.deleted && !isEditing && (
                     <span className="grove-edit-tag">(edited)</span>
                 )}
 
-                {isOwn && m.id !== undefined && !m.deleted && !isEditing && (
+                {m.id !== undefined && !m.deleted && !isEditing && (
                     <div className="grove-msg-actions" aria-label="Message actions">
+                        {isOwn && (
+                            <>
+                                <button
+                                    className="grove-msg-action-btn"
+                                    title="Edit message"
+                                    onClick={() => onStartEdit(m.id!, m.text)}
+                                >✏️</button>
+                                <button
+                                    className="grove-msg-action-btn grove-msg-action-delete"
+                                    title="Delete message"
+                                    onClick={() => {
+                                        if (window.confirm("Delete this message?")) {
+                                            onDelete(m.id!);
+                                        }
+                                    }}
+                                >🗑️</button>
+                            </>
+                        )}
                         <button
-                            className="grove-msg-action-btn"
-                            title="Edit message"
-                            onClick={() => onStartEdit(m.id!, m.text)}
-                        >✏️</button>
-                        <button
-                            className="grove-msg-action-btn grove-msg-action-delete"
-                            title="Delete message"
-                            onClick={() => {
-                                if (window.confirm("Delete this message?")) {
-                                    onDelete(m.id!);
-                                }
-                            }}
-                        >🗑️</button>
+                            className={`grove-msg-action-btn${isPinned ? " grove-msg-action-pinned" : ""}`}
+                            title={isPinned ? "Unpin message" : "Pin message"}
+                            onClick={() => isPinned ? onUnpin(m.id!) : onPin(m.id!)}
+                        >📌</button>
                     </div>
                 )}
             </div>
@@ -171,28 +199,42 @@ function MessageBody({
 export function MessageList({
     messages,
     currentUserId,
+    myUsername    = "",
     usernames,
     reactions     = {},
+    pinnedIds     = new Set(),
     hasMore       = false,
     loadingMore   = false,
+    scrollRef,
+    onScroll,
     onLoadMore,
     onReact,
     onEdit,
     onDelete,
+    onPin,
+    onUnpin,
     onUserHover,
 }: {
     messages:       DisplayMessage[];
     currentUserId:  number;
+    myUsername?:    string;
     usernames:      Record<number, string>;
     reactions?:     ReactionsMap;
+    pinnedIds?:     Set<number>;
     hasMore?:       boolean;
     loadingMore?:   boolean;
+    scrollRef?:     React.RefObject<HTMLDivElement | null>;
+    onScroll?:      () => void;
     onLoadMore?:    () => void;
     onReact?:       (messageId: number, emoji: string) => void;
     onEdit?:        (messageId: number, newText: string) => void;
     onDelete?:      (messageId: number) => void;
+    onPin?:         (messageId: number) => void;
+    onUnpin?:       (messageId: number) => void;
     onUserHover?:   (userId: number, event: React.MouseEvent) => void;
 }) {
+    const internalRef    = useRef<HTMLDivElement | null>(null);
+    const listRef        = scrollRef ?? internalRef;
     const bottomRef      = useRef<HTMLDivElement | null>(null);
     const prevLastTsRef  = useRef<number | null>(null);
     const [editingId,   setEditingId]   = useState<number | null>(null);
@@ -220,7 +262,14 @@ export function MessageList({
     const handleEditCancel = () => setEditingId(null);
 
     return (
-        <div className="grove-messages" role="log" aria-live="polite" aria-label="Messages">
+        <div
+            ref={listRef}
+            className="grove-messages"
+            role="log"
+            aria-live="polite"
+            aria-label="Messages"
+            onScroll={onScroll}
+        >
             {(hasMore || loadingMore) && (
                 <div className="grove-load-more">
                     <button
@@ -240,14 +289,17 @@ export function MessageList({
                 const newDay = prev === null || !sameDay(prev, m);
                 const name   = usernames[m.userId] ?? `user ${m.userId}`;
                 const isOwn  = m.userId === currentUserId;
-                const key    = `${m.id ?? m.timestamp}-${m.userId}-${i}`;
-                const msgReactions   = m.id !== undefined ? reactions[m.id] : undefined;
+                const key          = `${m.id ?? m.timestamp}-${m.userId}-${i}`;
+                const msgReactions = m.id !== undefined ? reactions[m.id] : undefined;
+                const isPinned     = m.id !== undefined ? pinnedIds.has(m.id) : false;
 
                 const bodyProps: MsgBodyProps = {
                     m,
                     isOwn,
                     name,
+                    myUsername,
                     showMeta:     !cont,
+                    isPinned,
                     reactions:    msgReactions,
                     editingId,
                     editText,
@@ -257,6 +309,8 @@ export function MessageList({
                     onStartEdit:  handleStartEdit,
                     onDelete:     (id) => onDelete?.(id),
                     onReact:      (id, emoji) => onReact?.(id, emoji),
+                    onPin:        (id) => onPin?.(id),
+                    onUnpin:      (id) => onUnpin?.(id),
                 };
 
                 return (

@@ -90,6 +90,22 @@ pub struct ChannelInfo {
     pub name: String,
 }
 
+#[derive(Serialize, sqlx::FromRow)]
+pub struct PinnedMessage {
+    pub message_id: i64,
+    pub channel_id: i64,
+    pub text: String,
+    pub user_id: i64,
+    pub username: String,
+    pub pinned_by: i64,
+    pub pinned_at: i64,
+}
+
+#[derive(Deserialize)]
+pub struct PinMessageRequest {
+    pub message_id: i64,
+}
+
 pub async fn get_user(
     _auth: AuthenticatedUser,
     State(state): State<Arc<AppState>>,
@@ -579,4 +595,107 @@ pub async fn list_friends(
         .collect();
 
     Ok(Json(friends))
+}
+
+// ── Pinned messages ───────────────────────────────────────────────────────────
+
+async fn assert_channel_member(
+    pool: &sqlx::PgPool,
+    channel_id: i64,
+    user_id: i64,
+) -> Result<(), StatusCode> {
+    let ok = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2)",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+    if ok {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+pub async fn get_channel_pins(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ReactionsQuery>,
+) -> Result<Json<Vec<PinnedMessage>>, StatusCode> {
+    assert_channel_member(&state.db, params.channel_id, auth.user_id).await?;
+
+    let pins = sqlx::query_as::<_, PinnedMessage>(
+        "SELECT pm.message_id, pm.channel_id,
+                CASE WHEN m.deleted_at IS NOT NULL THEN '' ELSE m.text END AS text,
+                m.user_id, u.username, pm.pinned_by,
+                FLOOR(EXTRACT(EPOCH FROM pm.pinned_at))::BIGINT AS pinned_at
+         FROM pinned_messages pm
+         JOIN messages m ON m.id = pm.message_id
+         JOIN users u ON u.id = m.user_id
+         WHERE pm.channel_id = $1
+         ORDER BY pm.pinned_at DESC",
+    )
+    .bind(params.channel_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(pins))
+}
+
+pub async fn pin_message(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<PinMessageRequest>,
+) -> Result<StatusCode, StatusCode> {
+    // Verify the message exists and get its channel_id
+    let channel_id = sqlx::query_scalar::<_, i64>(
+        "SELECT channel_id FROM messages WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(body.message_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    assert_channel_member(&state.db, channel_id, auth.user_id).await?;
+
+    sqlx::query(
+        "INSERT INTO pinned_messages (channel_id, message_id, pinned_by)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+    )
+    .bind(channel_id)
+    .bind(body.message_id)
+    .bind(auth.user_id)
+    .execute(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
+}
+
+pub async fn unpin_message(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<PinMessageRequest>,
+) -> Result<StatusCode, StatusCode> {
+    let channel_id = sqlx::query_scalar::<_, i64>("SELECT channel_id FROM messages WHERE id = $1")
+        .bind(body.message_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    assert_channel_member(&state.db, channel_id, auth.user_id).await?;
+
+    sqlx::query("DELETE FROM pinned_messages WHERE channel_id = $1 AND message_id = $2")
+        .bind(channel_id)
+        .bind(body.message_id)
+        .execute(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
 }

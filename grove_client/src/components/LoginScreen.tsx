@@ -46,18 +46,18 @@ export function LoginScreen({ onLogin }: { onLogin: () => void }) {
     return (
         <div className="grove-login">
             <div className="grove-login-scene">
-                {/* Large glass orb — Win7 user tile */}
-                <div className="grove-login-orb" role="img" aria-label="Grove logo">
-                    ❦
+                {/* Hero panel — colored gradient cap with orb + wordmark */}
+                <div className="grove-login-hero">
+                    <div className="grove-login-orb" role="img" aria-label="Grove logo">
+                        ❦
+                    </div>
+                    <div className="grove-login-wordmark">
+                        <h1>Grove</h1>
+                        <p>a quiet place to gather</p>
+                    </div>
                 </div>
 
-                {/* Wordmark */}
-                <div className="grove-login-wordmark">
-                    <h1>Grove</h1>
-                    <p>a quiet place to gather</p>
-                </div>
-
-                {/* Glass form panel */}
+                {/* Form body — white glass panel below hero */}
                 <div className="grove-login-form" role="main">
                     {mode === "register" && (
                         <div className="grove-login-field">
@@ -98,7 +98,6 @@ export function LoginScreen({ onLogin }: { onLogin: () => void }) {
                         <label className="grove-login-label" htmlFor="grove-password">
                             password
                         </label>
-                        {/* Password + Win7-style circle arrow button */}
                         <div className="grove-login-row">
                             <input
                                 id="grove-password"
@@ -137,18 +136,17 @@ export function LoginScreen({ onLogin }: { onLogin: () => void }) {
                             {error}
                         </div>
                     )}
-                </div>
 
-                {/* Toggle login / register */}
-                <div className="grove-login-switch">
-                    <button
-                        className="grove-link"
-                        onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}
-                    >
-                        {mode === "login"
-                            ? "new here? create an account"
-                            : "already have an account? sign in"}
-                    </button>
+                    <div className="grove-login-switch">
+                        <button
+                            className="grove-link"
+                            onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}
+                        >
+                            {mode === "login"
+                                ? "new here? create an account"
+                                : "already have an account? sign in"}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -157,7 +155,6 @@ export function LoginScreen({ onLogin }: { onLogin: () => void }) {
                 <span className="grove-login-bar-time">
                     <ClockDisplay />
                 </span>
-                {/* Accessibility / settings placeholder */}
                 <button className="grove-login-bar-btn" aria-label="Accessibility options">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                         <circle cx="12" cy="12" r="3"/>

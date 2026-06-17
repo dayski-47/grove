@@ -4,12 +4,12 @@ import { GroveSocket } from "../socket";
 import {
     getHistory, joinChannel, createChannel, listChannels,
     openDm, listDms, listFriends, addFriend, getChannelReactions, logout,
-    updateAbout, getUserProfile,
+    updateAbout, getUserProfile, getChannelPins, pinMessage, unpinMessage,
 } from "../api";
 import {
     MessageType, type ParsedMessage, type SignalingMessage,
     type DmInfo, type FriendInfo, type ReactionUpdate, type EditUpdate,
-    type DeleteUpdate, type UserProfile,
+    type DeleteUpdate, type UserProfile, type PinnedMessage,
 } from "../types";
 import type { DisplayMessage } from "./MessageList";
 import { ChannelWindow } from "./ChannelWindow";
@@ -72,16 +72,25 @@ export function HomeScreen({
     const [windows, setWindows]         = useState<WindowState[]>([]);
     const [appWindows, setAppWindows]   = useState<AppWindowState[]>([]);
     const [reactions, setReactions]     = useState<Record<number, ReactionsMap>>({});
+    const [pins, setPins]               = useState<Record<number, PinnedMessage[]>>({});
+    const [unreadByChannel, setUnread]  = useState<Record<number, number>>({});
+    const [minimizedIds, setMinimizedIds] = useState<Set<number>>(new Set());
+    const [recentChannels, setRecentChannels] = useState<{ channelId: number; name: string; kind: "channel" | "dm" }[]>([]);
+    const [userStatuses, setUserStatuses] = useState<Record<number, string>>({});
     const [popover, setPopover]         = useState<PopoverState | null>(null);
     const [myAbout, setMyAbout]         = useState(() => localStorage.getItem("grove_about") ?? "");
     const [myStatus, setMyStatus]       = useState<ActivityStatus>(
         () => (localStorage.getItem("grove_status") as ActivityStatus) ?? "online",
     );
+    const [myCustomStatus, setMyCustomStatus] = useState(
+        () => localStorage.getItem("grove_custom_status") ?? "",
+    );
 
-    const socketRef   = useRef<GroveSocket | null>(null);
-    const loadedRef   = useRef<Set<number>>(new Set());
-    const zRef        = useRef(100);
-    const oldestIdRef = useRef<Record<number, number>>({});
+    const socketRef        = useRef<GroveSocket | null>(null);
+    const loadedRef        = useRef<Set<number>>(new Set());
+    const zRef             = useRef(100);
+    const oldestIdRef      = useRef<Record<number, number>>({});
+    const openWindowIdsRef = useRef<Set<number>>(new Set());
     const [hasMore,     setHasMore]     = useState<Record<number, boolean>>({});
     const [loadingMore, setLoadingMore] = useState<Set<number>>(new Set());
 
@@ -119,6 +128,11 @@ export function HomeScreen({
 
     const { callState, remoteUserId, initiateCall, acceptCall, declineCall, hangup, handleSignal } =
         useWebRTC(userId, sendSignaling);
+
+    // Keep ref in sync so WS handler can check open windows without stale closures
+    useEffect(() => {
+        openWindowIdsRef.current = new Set(windows.map(w => w.channelId));
+    }, [windows]);
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -224,10 +238,18 @@ export function HomeScreen({
                         };
                     });
                     resolveUsername(msg.userId);
+
+                    // Track unreads for channels without an open window
+                    if (!openWindowIdsRef.current.has(msg.channelId)) {
+                        setUnread(prev => ({
+                            ...prev,
+                            [msg.channelId]: (prev[msg.channelId] ?? 0) + 1,
+                        }));
+                    }
                 }
             },
             (isConn) => setConnected(isConn),
-            (presenceUserId, online, name) => {
+            (presenceUserId, online, name, customStatus) => {
                 setOnlineUsers(prev => {
                     const next = new Set(prev);
                     if (online) { next.add(presenceUserId); resolveUsername(presenceUserId, name); }
@@ -237,6 +259,9 @@ export function HomeScreen({
                 setFriends(prev => prev.map(f =>
                     f.user_id === presenceUserId ? { ...f, online } : f,
                 ));
+                if (customStatus) {
+                    setUserStatuses(prev => ({ ...prev, [presenceUserId]: customStatus }));
+                }
             },
             handleSignal,
         );
@@ -251,17 +276,28 @@ export function HomeScreen({
         return () => socket.disconnect();
     }, [token, userId, handleSignal, resolveUsername, resolveProfile]);
 
-    // Broadcast status changes to other users
-    function handleStatusChange(status: ActivityStatus) {
-        setMyStatus(status);
-        localStorage.setItem("grove_status", status);
-        // Send a PRESENCE frame from the client to update others
+    function broadcastPresence(availability: ActivityStatus, customText: string) {
+        const payload = customText.trim()
+            ? `${availability}|${customText.trim()}`
+            : availability;
         if (socketRef.current) {
             const ws = (socketRef.current as unknown as { ws: WebSocket | null }).ws;
             if (ws?.readyState === WebSocket.OPEN) {
-                ws.send(packMessage(MessageType.PRESENCE, userId, 0, status));
+                ws.send(packMessage(MessageType.PRESENCE, userId, 0, payload));
             }
         }
+    }
+
+    function handleStatusChange(status: ActivityStatus) {
+        setMyStatus(status);
+        localStorage.setItem("grove_status", status);
+        broadcastPresence(status, myCustomStatus);
+    }
+
+    function handleCustomStatusChange(text: string) {
+        setMyCustomStatus(text);
+        localStorage.setItem("grove_custom_status", text);
+        broadcastPresence(myStatus, text);
     }
 
     async function handleAboutSave(text: string) {
@@ -318,6 +354,10 @@ export function HomeScreen({
                     setReactions(prev => ({ ...prev, [channelId]: rxMap }));
                 }
                 [...new Set(history.map(m => m.user_id))].forEach(uid => resolveUsername(uid));
+                // Fetch pins in the background
+                getChannelPins(channelId, token).then(pinList => {
+                    if (pinList.length > 0) setPins(prev => ({ ...prev, [channelId]: pinList }));
+                }).catch(() => {});
             } catch { /* already member or join failed */ }
         }
         const offset = (windows.length % 8) * 28;
@@ -325,6 +365,15 @@ export function HomeScreen({
             channelId, x: 60 + offset, y: 40 + offset, zIndex: bumpZ(),
             kind, displayName, partnerId,
         }]);
+
+        // Track recents (most recent first, deduplicated, capped at 8)
+        setRecentChannels(prev => {
+            const filtered = prev.filter(r => r.channelId !== channelId);
+            return [{ channelId, name: displayName, kind }, ...filtered].slice(0, 8);
+        });
+
+        // Un-minimize if it was minimized
+        setMinimizedIds(prev => { const s = new Set(prev); s.delete(channelId); return s; });
     }
 
     async function handleJoinById(channelId: number) {
@@ -425,6 +474,24 @@ export function HomeScreen({
 
     return (
         <div className="grove-home" onClick={() => setPopover(null)}>
+            {/* Recents strip */}
+            {recentChannels.length > 0 && (
+                <div className="grove-recents" role="navigation" aria-label="Recent channels">
+                    <span className="grove-recents-label">Recents</span>
+                    {recentChannels.map(r => (
+                        <button
+                            key={r.channelId}
+                            className={`grove-recent-pill${r.kind === "dm" ? " grove-recent-pill-dm" : ""}`}
+                            onClick={e => { e.stopPropagation(); openChannel(r.channelId, r.name, r.kind); }}
+                            title={r.name}
+                        >
+                            <span className="grove-recent-pill-dot" />
+                            {r.name}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             <div className="grove-app-tiles" role="main">
                 {(["channels", "friends", "dms"] as const).map((kind, i) => {
                     const labels: Record<string, string> = {
@@ -433,6 +500,18 @@ export function HomeScreen({
                         dms:      "Messages",
                     };
                     const isOpen = appWindows.some(w => w.kind === kind);
+
+                    // Unread count: sum unreads for the relevant window kind
+                    const totalUnread = kind === "channels"
+                        ? Object.entries(unreadByChannel)
+                            .filter(([id]) => windows.find(w => w.channelId === Number(id) && w.kind === "channel") === undefined)
+                            .reduce((s, [, n]) => s + n, 0)
+                        : kind === "dms"
+                        ? Object.entries(unreadByChannel)
+                            .filter(([id]) => windows.find(w => w.channelId === Number(id) && w.kind === "dm") === undefined)
+                            .reduce((s, [, n]) => s + n, 0)
+                        : 0;
+
                     return (
                         <div
                             key={kind}
@@ -442,11 +521,16 @@ export function HomeScreen({
                             <button
                                 className={`grove-app-tile${isOpen ? " grove-tile-open" : ""}`}
                                 onClick={() => openAppWindow(kind)}
-                                aria-label={labels[kind]}
+                                aria-label={`${labels[kind]}${totalUnread > 0 ? `, ${totalUnread} unread` : ""}`}
                                 aria-pressed={isOpen}
                             >
                                 <div className="grove-app-tile-orb" style={{ background: APP_TILE_COLORS[kind] }}>
                                     <AppIcon kind={kind} />
+                                    {totalUnread > 0 && (
+                                        <span className="grove-tile-unread-badge" aria-hidden="true">
+                                            {totalUnread > 99 ? "99+" : totalUnread}
+                                        </span>
+                                    )}
                                 </div>
                                 <span className="grove-app-tile-label">{labels[kind]}</span>
                             </button>
@@ -501,37 +585,106 @@ export function HomeScreen({
             })}
 
             {windows.map(w => {
+                if (minimizedIds.has(w.channelId)) return null;
                 const chMessages  = messages[w.channelId] ?? [];
                 const chTyping    = [...(typingUsers[w.channelId] ?? new Map()).keys()].map(uid => usernames[uid] ?? `user ${uid}`);
                 const chReactions = reactions[w.channelId] ?? {};
+                const chPins      = pins[w.channelId] ?? [];
+                const mentionUsers = Object.entries(usernames)
+                    .filter(([uid]) => Number(uid) !== userId)
+                    .map(([uid, name]) => ({ id: Number(uid), name }));
                 return (
                     <ChannelWindow
                         key={w.channelId}
+                        channelId={w.channelId}
                         channelName={w.displayName}
                         isDm={w.kind === "dm"}
                         partnerId={w.partnerId}
                         messages={chMessages}
                         usernames={usernames}
                         currentUserId={userId}
+                        myUsername={usernames[userId] ?? ""}
                         typingNames={chTyping}
                         connected={connected}
                         x={w.x} y={w.y} zIndex={w.zIndex}
                         hasMore={hasMore[w.channelId] ?? false}
                         loadingMore={loadingMore.has(w.channelId)}
                         reactions={chReactions}
+                        pins={chPins}
+                        mentionUsers={mentionUsers}
                         onSend={text       => socketRef.current?.sendText(w.channelId, text)}
                         onTyping={()       => socketRef.current?.sendTyping(w.channelId)}
                         onClose={()        => setWindows(prev => prev.filter(p => p.channelId !== w.channelId))}
-                        onFocus={()        => { const z = bumpZ(); setWindows(prev => prev.map(p => p.channelId === w.channelId ? { ...p, zIndex: z } : p)); }}
+                        onMinimize={()     => setMinimizedIds(prev => new Set(prev).add(w.channelId))}
+                        onFocus={() => {
+                            const z = bumpZ();
+                            setWindows(prev => prev.map(p => p.channelId === w.channelId ? { ...p, zIndex: z } : p));
+                            setUnread(prev => { const next = { ...prev }; delete next[w.channelId]; return next; });
+                        }}
                         onDrag={(x, y)     => setWindows(prev => prev.map(p => p.channelId === w.channelId ? { ...p, x, y } : p))}
                         onLoadMore={()     => loadMoreMessages(w.channelId)}
                         onReact={(msgId, emoji) => socketRef.current?.sendReaction(w.channelId, msgId, emoji)}
                         onEdit={(msgId, text)   => socketRef.current?.sendEdit(w.channelId, msgId, text)}
                         onDelete={(msgId)       => socketRef.current?.sendDelete(w.channelId, msgId)}
+                        onPin={async (msgId) => {
+                            await pinMessage(msgId, token).catch(() => {});
+                            const updated = await getChannelPins(w.channelId, token).catch(() => [] as typeof chPins);
+                            setPins(prev => ({ ...prev, [w.channelId]: updated }));
+                        }}
+                        onUnpin={async (msgId) => {
+                            await unpinMessage(msgId, token).catch(() => {});
+                            setPins(prev => ({
+                                ...prev,
+                                [w.channelId]: (prev[w.channelId] ?? []).filter(p => p.message_id !== msgId),
+                            }));
+                        }}
                         onUserHover={handleUserHover}
                     />
                 );
             })}
+
+            {/* Minimized window pills tray */}
+            {[...minimizedIds].length > 0 && (
+                <div className="grove-minimized-tray" role="region" aria-label="Minimized windows">
+                    {[...minimizedIds].map(cid => {
+                        const w = windows.find(win => win.channelId === cid);
+                        if (!w) return null;
+                        const unread = unreadByChannel[cid] ?? 0;
+                        return (
+                            <div
+                                key={cid}
+                                className="grove-min-pill"
+                                style={{ "--channel-accent": String((cid * 137) % 360) } as React.CSSProperties}
+                                onClick={() => {
+                                    setMinimizedIds(prev => { const s = new Set(prev); s.delete(cid); return s; });
+                                    const z = bumpZ();
+                                    setWindows(prev => prev.map(p => p.channelId === cid ? { ...p, zIndex: z } : p));
+                                    setUnread(prev => { const next = { ...prev }; delete next[cid]; return next; });
+                                }}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`Restore ${w.displayName}${unread > 0 ? `, ${unread} unread` : ""}`}
+                                onKeyDown={e => e.key === "Enter" && e.currentTarget.click()}
+                            >
+                                <span className="grove-min-pill-dot" />
+                                {w.displayName}
+                                {unread > 0 && (
+                                    <span className="grove-min-pill-unread">{unread > 99 ? "99+" : unread}</span>
+                                )}
+                                <button
+                                    className="grove-min-pill-close"
+                                    onClick={e => {
+                                        e.stopPropagation();
+                                        setMinimizedIds(prev => { const s = new Set(prev); s.delete(cid); return s; });
+                                        setWindows(prev => prev.filter(p => p.channelId !== cid));
+                                    }}
+                                    aria-label={`Close ${w.displayName}`}
+                                >✕</button>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
 
             {callState !== "idle" && (
                 <CallPopup
@@ -548,6 +701,7 @@ export function HomeScreen({
                 <UserPopover
                     profile={profiles[popover.userId]}
                     isOnline={onlineUsers.has(popover.userId)}
+                    customStatus={userStatuses[popover.userId] ?? ""}
                     anchorX={popover.x}
                     anchorY={popover.y}
                     currentUserId={userId}
@@ -572,7 +726,9 @@ export function HomeScreen({
                         username={myName}
                         about={myProfile?.about ?? myAbout}
                         status={myStatus}
+                        customStatusText={myCustomStatus}
                         onStatusChange={handleStatusChange}
+                        onCustomStatusChange={handleCustomStatusChange}
                         onAboutSave={handleAboutSave}
                     />
                 }

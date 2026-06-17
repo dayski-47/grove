@@ -5,7 +5,7 @@ import { MessageType, type ParsedMessage, type SignalingMessage } from "./types"
 
 type MessageHandler  = (msg: ParsedMessage) => void;
 type StatusHandler   = (connected: boolean) => void;
-type PresenceHandler = (userId: number, online: boolean, name?: string) => void;
+type PresenceHandler = (userId: number, online: boolean, name?: string, customStatus?: string) => void;
 type SignalHandler   = (msg: SignalingMessage) => void;
 
 const BACKOFF_INITIAL = 1_000;
@@ -65,11 +65,14 @@ export class GroveSocket {
                 try {
                     const msg = unpackMessage(event.data);
                     if (msg.msgType === MessageType.PRESENCE) {
-                        // payload: "status" or "status:name"
-                        const colonIdx = msg.text.indexOf(":");
-                        const status   = colonIdx === -1 ? msg.text : msg.text.slice(0, colonIdx);
-                        const name     = colonIdx === -1 ? undefined : msg.text.slice(colonIdx + 1);
-                        this.onPresence?.(msg.userId, status === "online", name);
+                        // payload: "status[:name]" or "availability|custom[:name]"
+                        const colonIdx  = msg.text.indexOf(":");
+                        const payload   = colonIdx === -1 ? msg.text : msg.text.slice(0, colonIdx);
+                        const name      = colonIdx === -1 ? undefined : msg.text.slice(colonIdx + 1);
+                        const pipeIdx   = payload.indexOf("|");
+                        const avail     = pipeIdx === -1 ? payload : payload.slice(0, pipeIdx);
+                        const custom    = pipeIdx === -1 ? undefined : payload.slice(pipeIdx + 1);
+                        this.onPresence?.(msg.userId, avail === "online" || avail === "away" || avail === "busy", name, custom);
                     } else {
                         this.onMessage(msg);
                     }

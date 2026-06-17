@@ -19,6 +19,7 @@ function relativeTime(unixTs: number): string {
 export function UserPopover({
     profile,
     isOnline,
+    customStatus = "",
     anchorX,
     anchorY,
     currentUserId,
@@ -28,6 +29,7 @@ export function UserPopover({
 }: {
     profile:       UserProfile;
     isOnline:      boolean;
+    customStatus?: string;
     anchorX:       number;
     anchorY:       number;
     currentUserId: number;
@@ -74,6 +76,9 @@ export function UserPopover({
                 <div className={`grove-popover-online${isOnline ? "" : " offline"}`}>
                     {isOnline ? "Online now" : `Last seen ${relativeTime(profile.last_seen)}`}
                 </div>
+                {customStatus && (
+                    <div className="grove-popover-custom-status">{customStatus}</div>
+                )}
 
                 {profile.about && (
                     <div className="grove-popover-about">{profile.about}</div>

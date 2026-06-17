@@ -1,8 +1,8 @@
 use super::auth::{login, logout, register};
 use super::messages::{
-    add_friend, create_channel, get_channel_online, get_channel_reactions, get_history, get_user,
-    join_channel, list_channels, list_dms, list_friends, open_dm, remove_friend, search_users,
-    update_my_profile,
+    add_friend, create_channel, get_channel_online, get_channel_pins, get_channel_reactions,
+    get_history, get_user, join_channel, list_channels, list_dms, list_friends, open_dm,
+    pin_message, remove_friend, search_users, unpin_message, update_my_profile,
 };
 use crate::api::AppState;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -37,6 +37,9 @@ pub async fn run_rest_server(
         .route("/api/friends", get(list_friends))
         .route("/api/friends/add", post(add_friend))
         .route("/api/friends/remove", post(remove_friend))
+        .route("/api/messages/pins", get(get_channel_pins))
+        .route("/api/messages/pin", post(pin_message))
+        .route("/api/messages/unpin", post(unpin_message))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(
             CorsLayer::new()

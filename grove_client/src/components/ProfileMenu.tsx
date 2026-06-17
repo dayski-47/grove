@@ -17,15 +17,15 @@ const STATUS_COLORS: Record<ActivityStatus, string> = {
     do_not_disturb:   "#9e9e9e",
 };
 
-// Quarter-circle fan — items at angles measured clockwise from "up" (0° = straight up, 90° = right).
-// Profile button is bottom-left; items fan up and to the right.
+// Fan upward from the avatar — angles measured clockwise from "up" (0° = straight up).
+// Negative angles go left, positive go right. Items spread above the avatar, not rightward.
 const MENU_ITEMS = [
-    { key: "about",   label: "About Me",      angle: 8,  icon: "👤" },
-    { key: "status",  label: "Set Status",    angle: 45, icon: "🌿" },
-    { key: "settings",label: "Settings",      angle: 82, icon: "⚙️" },
+    { key: "about",    label: "About Me",   angle: -26, icon: "👤" },
+    { key: "status",   label: "Set Status", angle:   0, icon: "🌿" },
+    { key: "settings", label: "Settings",   angle:  26, icon: "⚙️" },
 ] as const;
 
-const RADIUS = 96;
+const RADIUS = 82;
 
 function radialPos(angleDeg: number) {
     const rad = (angleDeg * Math.PI) / 180;
@@ -72,13 +72,17 @@ function AboutModal({ current, onSave, onClose }: AboutModalProps) {
 }
 
 interface StatusPickerProps {
-    current:  ActivityStatus;
-    onPick:   (s: ActivityStatus) => void;
-    onClose:  () => void;
+    current:    ActivityStatus;
+    customText: string;
+    onPick:     (s: ActivityStatus) => void;
+    onCustom:   (text: string) => void;
+    onClose:    () => void;
 }
 
-function StatusPicker({ current, onPick, onClose }: StatusPickerProps) {
-    const ref = useRef<HTMLDivElement>(null);
+function StatusPicker({ current, customText, onPick, onCustom, onClose }: StatusPickerProps) {
+    const ref       = useRef<HTMLDivElement>(null);
+    const [draft, setDraft] = useState(customText);
+
     useEffect(() => {
         function onClickOut(e: MouseEvent) {
             if (ref.current && !ref.current.contains(e.target as Node)) onClose();
@@ -93,13 +97,31 @@ function StatusPicker({ current, onPick, onClose }: StatusPickerProps) {
                 <button
                     key={s}
                     className={`grove-status-pick-row${s === current ? " active" : ""}`}
-                    onClick={() => { onPick(s); onClose(); }}
+                    onClick={() => { onPick(s); }}
                     role="menuitem"
                 >
                     <span className="grove-status-dot" style={{ background: STATUS_COLORS[s] }} />
                     {label}
                 </button>
             ))}
+            <div className="grove-status-custom-wrap">
+                <input
+                    className="grove-status-custom-input"
+                    placeholder="Custom status… (emoji welcome 🎮)"
+                    value={draft}
+                    maxLength={50}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => {
+                        if (e.key === "Enter") { onCustom(draft.trim()); onClose(); }
+                        if (e.key === "Escape") onClose();
+                    }}
+                    aria-label="Custom status text"
+                />
+                <button
+                    className="grove-btn-primary grove-btn-sm"
+                    onClick={() => { onCustom(draft.trim()); onClose(); }}
+                >Set</button>
+            </div>
         </div>
     );
 }
@@ -108,15 +130,19 @@ export function ProfileMenu({
     username,
     about,
     status,
+    customStatusText = "",
     onStatusChange,
+    onCustomStatusChange,
     onAboutSave,
 }: {
-    userId?:        number;
-    username:       string;
-    about:          string;
-    status:         ActivityStatus;
-    onStatusChange: (s: ActivityStatus) => void;
-    onAboutSave:    (text: string) => void;
+    userId?:              number;
+    username:             string;
+    about:                string;
+    status:               ActivityStatus;
+    customStatusText?:    string;
+    onStatusChange:       (s: ActivityStatus) => void;
+    onCustomStatusChange: (text: string) => void;
+    onAboutSave:          (text: string) => void;
 }) {
     const [open,        setOpen]        = useState(false);
     const [showAbout,   setShowAbout]   = useState(false);
@@ -175,7 +201,9 @@ export function ProfileMenu({
                         >
                             <StatusPicker
                                 current={status}
-                                onPick={onStatusChange}
+                                customText={customStatusText}
+                                onPick={s => { onStatusChange(s); }}
+                                onCustom={text => onCustomStatusChange(text)}
                                 onClose={() => setShowStatus(false)}
                             />
                         </div>

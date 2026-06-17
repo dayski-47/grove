@@ -3,6 +3,7 @@ import { API_BASE } from "./config";
 import type {
     ReactionSummary,
     UserProfile,
+    PinnedMessage,
     AuthResponse,
     RegisterRequest,
     LoginRequest,
@@ -157,6 +158,30 @@ export async function searchUsers(query: string, token: string): Promise<UserPro
     );
     if (!res.ok) return [];
     return (await res.json()) as UserProfile[];
+}
+
+export async function getChannelPins(channelId: number, token: string): Promise<PinnedMessage[]> {
+    const res = await fetch(`${API_BASE}/api/messages/pins?channel_id=${channelId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return [];
+    return (await res.json()) as PinnedMessage[];
+}
+
+export async function pinMessage(messageId: number, token: string): Promise<void> {
+    await fetch(`${API_BASE}/api/messages/pin`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ message_id: messageId }),
+    });
+}
+
+export async function unpinMessage(messageId: number, token: string): Promise<void> {
+    await fetch(`${API_BASE}/api/messages/unpin`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ message_id: messageId }),
+    });
 }
 
 export async function updateAbout(about: string, token: string): Promise<void> {

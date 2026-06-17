@@ -41,6 +41,16 @@ export interface HistoricMessage {
     deleted:   boolean;
 }
 
+export interface PinnedMessage {
+    message_id: number;
+    channel_id: number;
+    text:        string;
+    user_id:     number;
+    username:    string;
+    pinned_by:   number;
+    pinned_at:   number;
+}
+
 export interface UserProfile {
     id:        number;
     username:  string;
