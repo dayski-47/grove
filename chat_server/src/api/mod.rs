@@ -14,12 +14,15 @@ use jsonwebtoken::{DecodingKey, Validation, decode};
 use redis::Client;
 use sqlx::PgPool;
 use std::sync::Arc;
+use crate::cache::presence::PresenceTracker;
 
 #[derive(Clone)]
+
 pub struct AppState {
     pub db: PgPool,
     pub redis: Client,
     pub jwt_secret: String,
+    pub presence: PresenceTracker,
 }
 
 pub struct AuthenticatedUser {

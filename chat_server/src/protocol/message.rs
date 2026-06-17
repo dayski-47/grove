@@ -51,7 +51,7 @@ impl MessageHeader {
         buf[1..5].copy_from_slice(&self.user_id.to_le_bytes());
         buf[5..9].copy_from_slice(&self.channel_id.to_le_bytes());
         buf[9..13].copy_from_slice(&self.timestamp.to_le_bytes());
-        buf[9..11].copy_from_slice(&self.text_len.to_le_bytes());
+        buf[13..15].copy_from_slice(&self.text_len.to_le_bytes());
         Ok(())
     }
 }

@@ -29,10 +29,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let redis_client = cache::connect_redis(&redis_url).await?;
     println!("Connected to Redis");
 
+    let presence = cache::presence::PresenceTracker::new(redis_client.clone());
+
     let app_state = api::AppState {
         db: db_pool,
         redis: redis_client,
         jwt_secret,
+        presence,
     };
 
     let app_state_ws = Arc::new(app_state.clone());

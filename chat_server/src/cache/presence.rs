@@ -2,15 +2,26 @@
 #![allow(dead_code)]
 use redis::{AsyncCommands, Client};
 
+#[derive(Clone)]
 pub struct PresenceTracker {
     client: Client,
 }
 
 impl PresenceTracker {
+    pub fn new(client: Client) -> Self {
+        Self { client }
+    }
+    
+    pub async fn mark_offline(&self, user_id: u64) -> Result<(), redis::RedisError> {
+        let mut con = self.client.get_connection_manager().await?;
+        let key = format!("presence:{}", user_id);
+        let _: () = con.del(&key).await?;
+        Ok(())
+    }
     pub async fn mark_online(&self, user_id: u64) -> Result<(), redis::RedisError> {
         let mut con = self.client.get_connection_manager().await?;
         let key = format!("presence:{}", user_id);
-        let _: () = con.set_ex(&key, "online", 30).await?;
+        let _: () = con.set_ex(&key, "online", 30u64).await?;
         Ok(())
     }
     pub async fn is_online(&self, user_id: u64) -> Result<bool, redis::RedisError> {

@@ -9,6 +9,7 @@ use redis::AsyncCommands;
 use std::sync::Arc;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
+
 pub async fn handle_connection(
     ws_stream: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
     state: Arc<ServerState>,
@@ -20,9 +21,10 @@ pub async fn handle_connection(
     state.add_connection(user_id, tx);
 
     // Mark user online in Redis
-    let mut con = app_state.redis.get_connection_manager().await?;
-    let presence_key = format!("presence:{}", user_id);
-    let _: () = con.set_ex(&presence_key, "online", 30).await?;
+    // let mut con = app_state.redis.get_connection_manager().await?;
+    // let presence_key = format!("presence:{}", user_id);
+    // let _: () = con.set_ex(&presence_key, "online", 30).await?;
+    app_state.presence.mark_online(user_id).await?;
     println!("User {} connected", user_id);
 
     // Forward messages from mpsc channel to WebSocket
@@ -45,8 +47,9 @@ pub async fn handle_connection(
 
     // Cleanup on disconnect
     state.connections.write().unwrap().remove(&user_id);
-    let mut cleanup_con = app_state.redis.get_connection_manager().await?;
-    let _: () = cleanup_con.del(&presence_key).await?;
+    // let mut cleanup_con = app_state.redis.get_connection_manager().await?;
+    // let _: () = cleanup_con.del(&presence_key).await?;
+    app_state.presence.mark_offline(user_id).await?;
     println!("User {} disconnected", user_id);
     Ok(())
 }
