@@ -1914,3 +1914,309 @@ button, [role="button"] { cursor: pointer; }
   padding: 0 16px;
   width: 100%;
 }
+
+/* ══════════════════════════════════════════════════════════
+   APP TILES (Wii U main menu)
+   ══════════════════════════════════════════════════════════ */
+
+.grove-app-tiles {
+  display: flex;
+  gap: 28px;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  z-index: var(--z-tiles);
+}
+
+.grove-app-tile {
+  width: 170px;
+  height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,0.85);
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.40)  0%,
+      rgba(255,255,255,0.08) 40%,
+      rgba(210,235,255,0.28) 100%
+    );
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  box-shadow:
+    0 0 0 1px rgba(0,60,160,0.10),
+    0 10px 32px rgba(0,60,180,0.16),
+    inset 0 1px 0 rgba(255,255,255,0.92);
+  transition: transform 0.22s cubic-bezier(0.22,1,0.36,1), box-shadow 0.22s ease-out;
+  cursor: pointer;
+  font-family: var(--font);
+}
+
+.grove-app-tile:hover {
+  transform: scale(1.06) translateY(-3px);
+  box-shadow:
+    0 0 0 1px rgba(0,60,160,0.18),
+    0 18px 48px rgba(0,80,200,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.96);
+}
+
+.grove-app-tile:active {
+  transform: scale(0.94);
+  transition: transform 0.10s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+.grove-app-tile-orb {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(255,255,255,0.80);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.08),
+    0 6px 20px rgba(0,0,0,0.18),
+    inset 0 2px 0 rgba(255,255,255,0.50);
+  position: relative;
+  overflow: hidden;
+}
+
+.grove-app-tile-orb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0) 55%);
+}
+
+.grove-app-tile-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.60);
+  letter-spacing: -0.1px;
+}
+
+/* ══════════════════════════════════════════════════════════
+   LIST WINDOW (channels list, friends list)
+   ══════════════════════════════════════════════════════════ */
+
+.grove-list-window {
+  /* Width/height set inline; uses .grove-window base styles */
+}
+
+.grove-window-list-icon {
+  color: var(--sky-mid);
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.grove-list-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.grove-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(58,164,232,0.30) transparent;
+}
+.grove-list-scroll::-webkit-scrollbar       { width: 4px; }
+.grove-list-scroll::-webkit-scrollbar-thumb { background: rgba(58,164,232,0.30); border-radius: 2px; }
+
+.grove-list-section-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-soft);
+  padding: 10px 14px 4px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.65);
+}
+
+.grove-list-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  font-family: var(--font);
+  text-align: left;
+  transition: background 0.14s;
+}
+.grove-list-row:hover { background: rgba(255,255,255,0.35); }
+
+.grove-list-row-open { background: rgba(58,164,232,0.10); }
+.grove-list-row-open:hover { background: rgba(58,164,232,0.18); }
+
+.grove-list-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.40);
+}
+
+.grove-list-row-hash {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sky-mid);
+  flex-shrink: 0;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+}
+
+.grove-list-row-name {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.50);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grove-list-row-badge {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--sky-mid);
+  flex-shrink: 0;
+}
+
+.grove-list-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 32px 16px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+}
+
+.grove-list-footer {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255,255,255,0.70);
+  padding: 10px 12px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.08) 100%);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.grove-list-footer-error {
+  width: 100%;
+  font-size: 11.5px;
+  color: var(--danger);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.65);
+  margin: 0;
+}
+
+.grove-btn-primary {
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(8,75,155,0.38);
+  border-top-color: rgba(255,255,255,0.55);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.24);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 50%, rgba(0,0,0,0.03) 100%),
+    linear-gradient(180deg, #3aa4e8 0%, #1a7fd4 100%);
+  box-shadow: 0 1px 6px rgba(26,127,212,0.32), inset 0 1px 0 rgba(255,255,255,0.42);
+  transition: filter 0.15s;
+  flex-shrink: 0;
+}
+.grove-btn-primary:hover    { filter: brightness(1.09); }
+.grove-btn-primary:active   { transform: scale(0.96); }
+.grove-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+
+/* ── Friend row extras ──────────────────────────────────── */
+
+.grove-friend-row { cursor: default; }
+
+.grove-friend-avatar {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1.5px solid rgba(255,255,255,0.80);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.28);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.50), 0 1px 4px rgba(0,60,160,0.14);
+}
+
+.grove-friend-dot {
+  position: absolute;
+  bottom: -1px; right: -1px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.88);
+  background: radial-gradient(circle at 38% 35%, rgba(255,255,255,0.9) 0%, #22c55e 40%, #15803d 100%);
+  box-shadow: 0 0 4px rgba(34,197,94,0.45);
+}
+.grove-friend-dot.offline {
+  background: radial-gradient(circle at 38% 35%, rgba(255,255,255,0.6) 0%, #9ab8cc 45%, #6a8ea8 100%);
+  box-shadow: none;
+}
+
+.grove-friend-status {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+  flex-shrink: 0;
+}
+
+.grove-friend-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+.grove-friend-action-btn {
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.60);
+  background: rgba(255,255,255,0.30);
+  color: var(--text-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.grove-friend-action-btn:hover {
+  background: rgba(58,164,232,0.22);
+  color: var(--sky-mid);
+  border-color: rgba(58,164,232,0.44);
+}
+
+/* ── Login field labels ──────────────────────────────────── */
+
+.grove-login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.grove-login-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: rgba(255,255,255,0.72);
+  text-shadow: 0 1px 3px rgba(0,40,100,0.40);
+  padding-left: 2px;
+}

@@ -1,18 +1,24 @@
 // src/components/HomeScreen.tsx
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GroveSocket } from "../socket";
-import { getHistory, joinChannel, createChannel, getUser, listChannels, openDm, listDms } from "../api";
-import { MessageType, type ParsedMessage, type SignalingMessage, type DmInfo } from "../types";
+import {
+    getHistory, joinChannel, createChannel, getUser, listChannels,
+    openDm, listDms, listFriends, addFriend,
+} from "../api";
+import { MessageType, type ParsedMessage, type SignalingMessage, type DmInfo, type FriendInfo } from "../types";
 import type { DisplayMessage } from "./MessageList";
 import { ChannelWindow } from "./ChannelWindow";
+import { ChannelListWindow } from "./ChannelListWindow";
+import { FriendsWindow } from "./FriendsWindow";
 import { TaskBar } from "./TaskBar";
 import { CallPopup } from "./CallPopup";
 import { useWebRTC } from "../useWebRTC";
 
-const TILE_ACCENTS = [
-    "#1a7fd4","#2d8a3c","#7b52c8","#c07828",
-    "#1a9090","#b03060","#4a70b8","#4a9060",
-];
+const APP_TILE_COLORS: Record<string, string> = {
+    channels: "linear-gradient(135deg, #1a7fd4 0%, #0a52a8 100%)",
+    friends:  "linear-gradient(135deg, #2d8a3c 0%, #1a5828 100%)",
+    dms:      "linear-gradient(135deg, #7b52c8 0%, #4a2e8c 100%)",
+};
 
 interface Channel { id: number; name: string; }
 interface WindowState {
@@ -24,6 +30,8 @@ interface WindowState {
     displayName: string;
     partnerId?:  number;
 }
+type AppKind = "channels" | "friends";
+interface AppWindowState { kind: AppKind; x: number; y: number; zIndex: number; }
 
 export function HomeScreen({
     token,
@@ -36,17 +44,18 @@ export function HomeScreen({
 }) {
     const [channels, setChannels]       = useState<Channel[]>([]);
     const [dms, setDms]                 = useState<DmInfo[]>([]);
+    const [friends, setFriends]         = useState<FriendInfo[]>([]);
     const [messages, setMessages]       = useState<Record<number, DisplayMessage[]>>({});
     const [connected, setConnected]     = useState(false);
     const [usernames, setUsernames]     = useState<Record<number, string>>({});
     const [onlineUsers, setOnlineUsers] = useState<Set<number>>(new Set());
     const [typingUsers, setTypingUsers] = useState<Record<number, Map<number, number>>>({});
     const [windows, setWindows]         = useState<WindowState[]>([]);
-    const [newChannelName, setNewChannelName] = useState("");
+    const [appWindows, setAppWindows]   = useState<AppWindowState[]>([]);
 
-    const socketRef  = useRef<GroveSocket | null>(null);
-    const loadedRef  = useRef<Set<number>>(new Set());
-    const zRef       = useRef(100);
+    const socketRef = useRef<GroveSocket | null>(null);
+    const loadedRef = useRef<Set<number>>(new Set());
+    const zRef      = useRef(100);
 
     const resolveUsername = useCallback((uid: number, known?: string) => {
         if (known) { setUsernames(p => ({ ...p, [uid]: known })); return; }
@@ -67,7 +76,7 @@ export function HomeScreen({
     const { callState, remoteUserId, initiateCall, acceptCall, declineCall, hangup, handleSignal } =
         useWebRTC(userId, sendSignaling);
 
-    // Expire typing after 3 s of silence
+    // Expire typing indicators
     useEffect(() => {
         const timer = setInterval(() => {
             const now = Date.now();
@@ -90,8 +99,7 @@ export function HomeScreen({
 
     useEffect(() => {
         const socket = new GroveSocket(
-            token,
-            userId,
+            token, userId,
             (msg: ParsedMessage) => {
                 if (msg.msgType === MessageType.TYPING) {
                     if (msg.userId !== userId) {
@@ -121,201 +129,170 @@ export function HomeScreen({
                 setOnlineUsers(prev => {
                     const next = new Set(prev);
                     if (online) { next.add(presenceUserId); resolveUsername(presenceUserId, name); }
-                    else next.delete(presenceUserId);
+                    else        next.delete(presenceUserId);
                     return next;
                 });
+                // Refresh friend online status when presence changes
+                setFriends(prev => prev.map(f =>
+                    f.user_id === presenceUserId ? { ...f, online } : f,
+                ));
             },
             handleSignal,
         );
         socket.connect();
         socketRef.current = socket;
 
-        listChannels(token)
-            .then(chs => setChannels(chs.map(c => ({ id: c.id, name: c.name }))))
-            .catch(console.error);
-
-        listDms(token)
-            .then(list => {
-                setDms(list);
-                list.forEach(dm => resolveUsername(dm.partner_id, dm.partner_name));
-            })
-            .catch(console.error);
+        listChannels(token).then(chs => setChannels(chs.map(c => ({ id: c.id, name: c.name })))).catch(console.error);
+        listDms(token).then(list => { setDms(list); list.forEach(d => resolveUsername(d.partner_id, d.partner_name)); }).catch(console.error);
+        listFriends(token).then(setFriends).catch(console.error);
 
         return () => socket.disconnect();
     }, [token, userId, handleSignal, resolveUsername]);
 
-    async function openChannel(channelId: number, displayName?: string, kind: "channel" | "dm" = "channel", partnerId?: number) {
-        // Bring existing window to front
+    function bumpZ(): number {
+        zRef.current++;
+        return zRef.current;
+    }
+
+    async function openChannel(channelId: number, displayName: string, kind: "channel" | "dm" = "channel", partnerId?: number) {
         const exists = windows.find(w => w.channelId === channelId);
         if (exists) {
-            zRef.current++;
-            setWindows(prev => prev.map(w =>
-                w.channelId === channelId ? { ...w, zIndex: zRef.current } : w,
-            ));
+            const z = bumpZ();
+            setWindows(prev => prev.map(w => w.channelId === channelId ? { ...w, zIndex: z } : w));
             return;
         }
-
-        // Join and load history on first open
         if (!loadedRef.current.has(channelId)) {
             loadedRef.current.add(channelId);
             try {
                 if (kind === "channel") await joinChannel(channelId, token);
                 const history = await getHistory(channelId, token);
-                const msgs = history.slice().reverse().map(m => ({
-                    userId:    m.user_id,
-                    text:      m.text,
-                    timestamp: m.timestamp,
+                setMessages(prev => ({
+                    ...prev,
+                    [channelId]: history.slice().reverse().map(m => ({
+                        userId: m.user_id, text: m.text, timestamp: m.timestamp,
+                    })),
                 }));
-                setMessages(prev => ({ ...prev, [channelId]: msgs }));
                 [...new Set(history.map(m => m.user_id))].forEach(uid => resolveUsername(uid));
             } catch { /* already member */ }
         }
-
-        // Cascade new window position
         const offset = (windows.length % 8) * 28;
-        zRef.current++;
-        setWindows(prev => [
-            ...prev,
-            {
-                channelId,
-                x: 60 + offset,
-                y: 40 + offset,
-                zIndex: zRef.current,
-                kind,
-                displayName: displayName ?? String(channelId),
-                partnerId,
-            },
-        ]);
+        setWindows(prev => [...prev, {
+            channelId, x: 60 + offset, y: 40 + offset, zIndex: bumpZ(),
+            kind, displayName, partnerId,
+        }]);
     }
 
     async function openDmWith(partnerId: number) {
-        const existingDm = dms.find(d => d.partner_id === partnerId);
-        if (existingDm) {
-            openChannel(existingDm.channel_id, existingDm.partner_name, "dm", partnerId);
-            return;
-        }
+        const existing = dms.find(d => d.partner_id === partnerId);
+        if (existing) { openChannel(existing.channel_id, existing.partner_name, "dm", partnerId); return; }
         try {
             const { channel_id } = await openDm(partnerId, token);
-            const partnerName = usernames[partnerId] ?? `user ${partnerId}`;
-            const newDm: DmInfo = { channel_id, partner_id: partnerId, partner_name: partnerName };
+            const partnerName    = usernames[partnerId] ?? `user ${partnerId}`;
+            const newDm: DmInfo  = { channel_id, partner_id: partnerId, partner_name: partnerName };
             setDms(prev => [newDm, ...prev]);
             openChannel(channel_id, partnerName, "dm", partnerId);
-        } catch (e) {
-            console.error("Failed to open DM", e);
-        }
+        } catch (e) { console.error("Failed to open DM", e); }
     }
 
-    async function handleCreateChannel() {
-        const name = newChannelName.trim();
-        if (!name) return;
+    function openAppWindow(kind: AppKind) {
+        const exists = appWindows.find(w => w.kind === kind);
+        if (exists) {
+            const z = bumpZ();
+            setAppWindows(prev => prev.map(w => w.kind === kind ? { ...w, zIndex: z } : w));
+            return;
+        }
+        const offset = (appWindows.length % 4) * 32;
+        setAppWindows(prev => [...prev, { kind, x: 80 + offset, y: 60 + offset, zIndex: bumpZ() }]);
+    }
+
+    async function handleCreateChannel(name: string) {
         try {
             const res = await createChannel(name, token);
-            const newChannel = { id: res.channel_id, name };
-            setChannels(prev => [...prev, newChannel]);
-            setNewChannelName("");
+            const ch  = { id: res.channel_id, name };
+            setChannels(prev => [...prev, ch]);
             openChannel(res.channel_id, name, "channel");
         } catch { console.error("Failed to create channel"); }
+    }
+
+    async function handleAddFriend(uid: number) {
+        try {
+            await addFriend(uid, token);
+            const updated = await listFriends(token);
+            setFriends(updated);
+        } catch { console.error("Failed to add friend"); }
     }
 
     const myName = usernames[userId] ?? `user ${userId}`;
 
     return (
         <div className="grove-home">
-            {/* Wii U tile grid */}
-            <div className="grove-tiles" role="main">
-                {/* Channel tiles */}
-                {channels.map((ch, i) => {
-                    const accent = TILE_ACCENTS[i % TILE_ACCENTS.length];
-                    const isOpen = windows.some(w => w.channelId === ch.id);
+            {/* 3 main app tiles */}
+            <div className="grove-app-tiles" role="main">
+                {(["channels", "friends", "dms"] as const).map((kind, i) => {
+                    const labels: Record<string, string> = {
+                        channels: "Channels",
+                        friends:  "Friends",
+                        dms:      "Messages",
+                    };
+                    const isOpen = appWindows.some(w => w.kind === kind) ||
+                        (kind === "dms" && dms.some(d => windows.some(w => w.channelId === d.channel_id)));
                     return (
                         <div
-                            key={`ch-${ch.id}`}
+                            key={kind}
                             className="grove-tile-float"
-                            style={{ animationDelay: `${(i % 6) * 0.4}s` }}
+                            style={{ animationDelay: `${i * 0.5}s` }}
                         >
                             <button
-                                className={`grove-tile${isOpen ? " grove-tile-open" : ""}`}
-                                onClick={() => openChannel(ch.id, ch.name, "channel")}
-                                aria-label={`Open channel ${ch.name}${isOpen ? " (open)" : ""}`}
+                                className={`grove-app-tile${isOpen ? " grove-tile-open" : ""}`}
+                                onClick={() => kind === "dms" ? openAppWindow("channels") : openAppWindow(kind)}
+                                aria-label={labels[kind]}
                                 aria-pressed={isOpen}
                             >
-                                <div className="grove-tile-accent" style={{ background: accent }} />
-                                <div className="grove-tile-body">
-                                    <span className="grove-tile-hash" aria-hidden="true">#</span>
-                                    <span className="grove-tile-name">{ch.name}</span>
+                                <div className="grove-app-tile-orb" style={{ background: APP_TILE_COLORS[kind] }}>
+                                    <AppIcon kind={kind} />
                                 </div>
-                            </button>
-                        </div>
-                    );
-                })}
-
-                {/* New channel tile */}
-                <div
-                    className="grove-tile-float"
-                    style={{ animationDelay: `${(channels.length % 6) * 0.4}s` }}
-                >
-                    <div className="grove-tile grove-tile-new" aria-label="Create a new channel">
-                        <div className="grove-tile-accent" style={{ background: "rgba(100,140,180,0.45)" }} />
-                        <div className="grove-tile-body" style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                            <input
-                                className="grove-tile-input"
-                                placeholder="new channel"
-                                value={newChannelName}
-                                onChange={e => setNewChannelName(e.target.value)}
-                                onKeyDown={e => { if (e.key === "Enter") handleCreateChannel(); }}
-                                aria-label="New channel name"
-                                onClick={e => e.stopPropagation()}
-                            />
-                            <button
-                                className="grove-tile-create"
-                                onClick={handleCreateChannel}
-                                aria-label="Create channel"
-                            >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                                    <line x1="12" y1="5" x2="12" y2="19"/>
-                                    <line x1="5"  y1="12" x2="19" y2="12"/>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* DM tiles */}
-                {dms.map((dm, i) => {
-                    const accent = TILE_ACCENTS[dm.partner_id % TILE_ACCENTS.length];
-                    const isOpen = windows.some(w => w.channelId === dm.channel_id);
-                    const initial = dm.partner_name.slice(0, 1).toUpperCase();
-                    return (
-                        <div
-                            key={`dm-${dm.channel_id}`}
-                            className="grove-tile-float"
-                            style={{ animationDelay: `${((channels.length + 1 + i) % 6) * 0.4}s` }}
-                        >
-                            <button
-                                className={`grove-tile${isOpen ? " grove-tile-open" : ""}`}
-                                onClick={() => openChannel(dm.channel_id, dm.partner_name, "dm", dm.partner_id)}
-                                aria-label={`DM with ${dm.partner_name}${isOpen ? " (open)" : ""}`}
-                                aria-pressed={isOpen}
-                            >
-                                {/* DM accent: avatar orb */}
-                                <div className="grove-tile-accent grove-tile-accent-dm" style={{ background: accent }}>
-                                    <span className="grove-tile-dm-initial">{initial}</span>
-                                </div>
-                                <div className="grove-tile-body">
-                                    <span className="grove-tile-hash" aria-hidden="true" style={{ fontSize: 11, opacity: 0.7 }}>DM</span>
-                                    <span className="grove-tile-name">{dm.partner_name}</span>
-                                </div>
+                                <span className="grove-app-tile-label">{labels[kind]}</span>
                             </button>
                         </div>
                     );
                 })}
             </div>
 
-            {/* Floating channel windows */}
+            {/* App list windows */}
+            {appWindows.map(aw => {
+                if (aw.kind === "channels") return (
+                    <ChannelListWindow
+                        key="channels"
+                        channels={channels}
+                        openChannelIds={new Set(windows.filter(w => w.kind === "channel").map(w => w.channelId))}
+                        x={aw.x} y={aw.y} zIndex={aw.zIndex}
+                        onOpen={(id, name) => openChannel(id, name, "channel")}
+                        onClose={() => setAppWindows(prev => prev.filter(w => w.kind !== "channels"))}
+                        onFocus={() => { const z = bumpZ(); setAppWindows(prev => prev.map(w => w.kind === "channels" ? { ...w, zIndex: z } : w)); }}
+                        onDrag={(x, y) => setAppWindows(prev => prev.map(w => w.kind === "channels" ? { ...w, x, y } : w))}
+                        onCreateChannel={handleCreateChannel}
+                    />
+                );
+                if (aw.kind === "friends") return (
+                    <FriendsWindow
+                        key="friends"
+                        friends={friends}
+                        x={aw.x} y={aw.y} zIndex={aw.zIndex}
+                        onClose={() => setAppWindows(prev => prev.filter(w => w.kind !== "friends"))}
+                        onFocus={() => { const z = bumpZ(); setAppWindows(prev => prev.map(w => w.kind === "friends" ? { ...w, zIndex: z } : w)); }}
+                        onDrag={(x, y) => setAppWindows(prev => prev.map(w => w.kind === "friends" ? { ...w, x, y } : w))}
+                        onDm={openDmWith}
+                        onCall={initiateCall}
+                        onAddFriend={handleAddFriend}
+                    />
+                );
+                return null;
+            })}
+
+            {/* Floating chat windows */}
             {windows.map(w => {
                 const chMessages = messages[w.channelId] ?? [];
-                const chTyping   = [...(typingUsers[w.channelId] ?? new Map()).keys()]
-                    .map(uid => usernames[uid] ?? `user ${uid}`);
+                const chTyping   = [...(typingUsers[w.channelId] ?? new Map()).keys()].map(uid => usernames[uid] ?? `user ${uid}`);
                 return (
                     <ChannelWindow
                         key={w.channelId}
@@ -327,26 +304,16 @@ export function HomeScreen({
                         currentUserId={userId}
                         typingNames={chTyping}
                         connected={connected}
-                        x={w.x}
-                        y={w.y}
-                        zIndex={w.zIndex}
-                        onSend={text   => socketRef.current?.sendText(w.channelId, text)}
-                        onTyping={()   => socketRef.current?.sendTyping(w.channelId)}
-                        onClose={()    => setWindows(prev => prev.filter(p => p.channelId !== w.channelId))}
-                        onFocus={()    => {
-                            zRef.current++;
-                            setWindows(prev => prev.map(p =>
-                                p.channelId === w.channelId ? { ...p, zIndex: zRef.current } : p,
-                            ));
-                        }}
-                        onDrag={(x, y) => setWindows(prev => prev.map(p =>
-                            p.channelId === w.channelId ? { ...p, x, y } : p,
-                        ))}
+                        x={w.x} y={w.y} zIndex={w.zIndex}
+                        onSend={text  => socketRef.current?.sendText(w.channelId, text)}
+                        onTyping={()  => socketRef.current?.sendTyping(w.channelId)}
+                        onClose={()   => setWindows(prev => prev.filter(p => p.channelId !== w.channelId))}
+                        onFocus={()   => { const z = bumpZ(); setWindows(prev => prev.map(p => p.channelId === w.channelId ? { ...p, zIndex: z } : p)); }}
+                        onDrag={(x, y) => setWindows(prev => prev.map(p => p.channelId === w.channelId ? { ...p, x, y } : p))}
                     />
                 );
             })}
 
-            {/* Draggable call popup */}
             {callState !== "idle" && (
                 <CallPopup
                     callState={callState}
@@ -358,7 +325,6 @@ export function HomeScreen({
                 />
             )}
 
-            {/* Bottom taskbar */}
             <TaskBar
                 userId={userId}
                 username={myName}
@@ -372,5 +338,27 @@ export function HomeScreen({
 
             <audio id="grove-remote-audio" autoPlay style={{ display: "none" }} />
         </div>
+    );
+}
+
+function AppIcon({ kind }: { kind: "channels" | "friends" | "dms" }) {
+    if (kind === "channels") return (
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.95)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+    );
+    if (kind === "friends") return (
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.95)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+    );
+    return (
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.95)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+            <polyline points="22,6 12,13 2,6"/>
+        </svg>
     );
 }

@@ -26,6 +26,12 @@ export interface DmInfo {
   partner_name: string;
 }
 
+export interface FriendInfo {
+  user_id:  number;
+  username: string;
+  online:   boolean;
+}
+
 export interface HistoricMessage {
   id: number;
   user_id: number;

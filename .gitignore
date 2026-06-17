@@ -20,3 +20,6 @@ grove_client/dist/
 .vscode/
 .idea/
 
+# Internal notes
+GROVE_HANDOFF.md
+

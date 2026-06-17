@@ -6,6 +6,7 @@ import type {
     LoginRequest,
     CreateChannelResponse,
     DmInfo,
+    FriendInfo,
     HistoricMessage,
 } from "./types";
 
@@ -89,6 +90,22 @@ export async function listChannels(token: string): Promise<ChannelInfo[]> {
   });
   if (!res.ok) throw new Error(`Failed to fetch channels: ${res.status}`);
   return (await res.json()) as ChannelInfo[];
+}
+
+export async function listFriends(token: string): Promise<FriendInfo[]> {
+    const res = await fetch(`${API_BASE}/api/friends`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to fetch friends: ${res.status}`);
+    return (await res.json()) as FriendInfo[];
+}
+
+export function addFriend(userId: number, token: string): Promise<void> {
+    return postJson<void>("/api/friends/add", { user_id: userId }, token);
+}
+
+export function removeFriend(userId: number, token: string): Promise<void> {
+    return postJson<void>("/api/friends/remove", { user_id: userId }, token);
 }
 
 export async function openDm(withUser: number, token: string): Promise<{ channel_id: number }> {

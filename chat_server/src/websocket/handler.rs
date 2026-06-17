@@ -163,6 +163,10 @@ pub async fn handle_binary_message(
             if validate_message_text(&text).is_err() {
                 return Ok(());
             }
+            // Security: verify the sender is actually a member before persisting.
+            if !is_channel_member(user_id, channel_id, &app_state.redis).await {
+                return Ok(());
+            }
             let frame = sanitize_frame(data, user_id, ts);
             crate::database::messages::insert_message(
                 &app_state.db,
@@ -176,6 +180,10 @@ pub async fn handle_binary_message(
         }
 
         MessageType::TYPING => {
+            // Only broadcast typing to channels the user has joined.
+            if !is_channel_member(user_id, channel_id, &app_state.redis).await {
+                return Ok(());
+            }
             let frame = sanitize_frame(data, user_id, ts);
             broadcast_to_channel(&frame, channel_id, state, &app_state.redis).await?;
         }
@@ -202,6 +210,14 @@ pub async fn handle_binary_message(
     }
 
     Ok(())
+}
+
+async fn is_channel_member(user_id: u64, channel_id: u64, redis: &ConnectionManager) -> bool {
+    let mut con = redis.clone();
+    let key = format!("channel:{}:members", channel_id);
+    con.sismember::<_, _, bool>(&key, user_id as i64)
+        .await
+        .unwrap_or(false)
 }
 
 // One ConnectionManager clone per call (Arc bump) instead of opening a new socket.

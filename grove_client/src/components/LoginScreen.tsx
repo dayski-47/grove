@@ -60,58 +60,76 @@ export function LoginScreen({ onLogin }: { onLogin: () => void }) {
                 {/* Glass form panel */}
                 <div className="grove-login-form" role="main">
                     {mode === "register" && (
-                        <input
-                            className="grove-input"
-                            placeholder="username"
-                            value={username}
-                            autoComplete="username"
-                            aria-label="Username"
-                            onChange={(e) => setUsername(e.target.value)}
-                            onKeyDown={handleKey}
-                        />
+                        <div className="grove-login-field">
+                            <label className="grove-login-label" htmlFor="grove-username">
+                                username
+                            </label>
+                            <input
+                                id="grove-username"
+                                className="grove-input"
+                                placeholder="letters, numbers, underscores"
+                                value={username}
+                                autoComplete="username"
+                                aria-label="Username"
+                                onChange={(e) => setUsername(e.target.value)}
+                                onKeyDown={handleKey}
+                            />
+                        </div>
                     )}
 
-                    <input
-                        className="grove-input"
-                        placeholder="email"
-                        type="email"
-                        value={email}
-                        autoComplete="email"
-                        aria-label="Email"
-                        onChange={(e) => setEmail(e.target.value)}
-                        onKeyDown={handleKey}
-                    />
-
-                    {/* Password + Win7-style circle arrow button */}
-                    <div className="grove-login-row">
+                    <div className="grove-login-field">
+                        <label className="grove-login-label" htmlFor="grove-email">
+                            email
+                        </label>
                         <input
+                            id="grove-email"
                             className="grove-input"
-                            placeholder="password"
-                            type="password"
-                            value={password}
-                            autoComplete={mode === "login" ? "current-password" : "new-password"}
-                            aria-label="Password"
-                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="you@example.com"
+                            type="email"
+                            value={email}
+                            autoComplete="email"
+                            aria-label="Email"
+                            onChange={(e) => setEmail(e.target.value)}
                             onKeyDown={handleKey}
-                            style={{ flex: 1 }}
                         />
-                        <button
-                            className="grove-login-go"
-                            onClick={handleSubmit}
-                            disabled={loading}
-                            aria-label={mode === "login" ? "Sign in" : "Create account"}
-                        >
-                            {loading ? (
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-                                </svg>
-                            ) : (
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <line x1="5" y1="12" x2="19" y2="12"/>
-                                    <polyline points="12 5 19 12 12 19"/>
-                                </svg>
-                            )}
-                        </button>
+                    </div>
+
+                    <div className="grove-login-field">
+                        <label className="grove-login-label" htmlFor="grove-password">
+                            password
+                        </label>
+                        {/* Password + Win7-style circle arrow button */}
+                        <div className="grove-login-row">
+                            <input
+                                id="grove-password"
+                                className="grove-input"
+                                placeholder={mode === "register" ? "min 8 chars, letter + number + symbol" : "your password"}
+                                type="password"
+                                value={password}
+                                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                                aria-label="Password"
+                                onChange={(e) => setPassword(e.target.value)}
+                                onKeyDown={handleKey}
+                                style={{ flex: 1 }}
+                            />
+                            <button
+                                className="grove-login-go"
+                                onClick={handleSubmit}
+                                disabled={loading}
+                                aria-label={mode === "login" ? "Sign in" : "Create account"}
+                            >
+                                {loading ? (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                                        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                                    </svg>
+                                ) : (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="5" y1="12" x2="19" y2="12"/>
+                                        <polyline points="12 5 19 12 12 19"/>
+                                    </svg>
+                                )}
+                            </button>
+                        </div>
                     </div>
 
                     {error && (

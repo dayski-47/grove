@@ -1,12 +1,14 @@
+use crate::api::ratelimit::check_rate_limit;
 use crate::api::validation::validate_channel_name;
 use crate::api::{AppState, AuthenticatedUser};
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{ConnectInfo, Query, State},
     http::StatusCode,
 };
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 #[derive(Deserialize)]
@@ -222,14 +224,29 @@ pub struct DmInfo {
 /// Idempotent: calling twice for the same pair returns the same channel_id.
 pub async fn open_dm(
     auth: AuthenticatedUser,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
     Json(req): Json<OpenDmRequest>,
 ) -> Result<Json<OpenDmResponse>, (StatusCode, String)> {
+    check_rate_limit(&state.redis, &format!("dm_open:{}", addr.ip()), 20, 60)
+        .await
+        .map_err(|s| (s, "Too many requests".into()))?;
+
     let me = auth.user_id;
     let them = req.with_user;
 
     if me == them {
         return Err((StatusCode::BAD_REQUEST, "cannot DM yourself".into()));
+    }
+
+    // Ensure target user actually exists.
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM users WHERE id = $1")
+        .bind(them)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;
+    if exists.is_none() {
+        return Err((StatusCode::NOT_FOUND, "user not found".into()));
     }
 
     // Canonical order: smaller id first.
@@ -320,4 +337,118 @@ pub async fn list_dms(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(dms))
+}
+
+// ── Friends ───────────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct FriendRequest {
+    pub user_id: i64,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct FriendInfo {
+    pub user_id: i64,
+    pub username: String,
+    pub online: bool,
+}
+
+pub async fn add_friend(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<FriendRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let me = auth.user_id;
+    let them = req.user_id;
+
+    if me == them {
+        return Err((StatusCode::BAD_REQUEST, "cannot friend yourself".into()));
+    }
+
+    // Verify target exists.
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM users WHERE id = $1")
+        .bind(them)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;
+    if exists.is_none() {
+        return Err((StatusCode::NOT_FOUND, "user not found".into()));
+    }
+
+    let (a, b) = if me < them { (me, them) } else { (them, me) };
+
+    sqlx::query("INSERT INTO friendships (user_a, user_b) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+        .bind(a)
+        .bind(b)
+        .execute(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;
+
+    Ok(StatusCode::OK)
+}
+
+pub async fn remove_friend(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<FriendRequest>,
+) -> Result<StatusCode, StatusCode> {
+    let me = auth.user_id;
+    let them = req.user_id;
+    let (a, b) = if me < them { (me, them) } else { (them, me) };
+
+    sqlx::query("DELETE FROM friendships WHERE user_a = $1 AND user_b = $2")
+        .bind(a)
+        .bind(b)
+        .execute(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
+}
+
+pub async fn list_friends(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<FriendInfo>>, StatusCode> {
+    let me = auth.user_id;
+
+    // Fetch friend user_ids + usernames in one query.
+    let rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT u.id, u.username
+         FROM friendships f
+         JOIN users u ON u.id = CASE WHEN f.user_a = $1 THEN f.user_b ELSE f.user_a END
+         WHERE f.user_a = $1 OR f.user_b = $1
+         ORDER BY u.username ASC",
+    )
+    .bind(me)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if rows.is_empty() {
+        return Ok(Json(vec![]));
+    }
+
+    // Batch presence check.
+    let mut con = state.redis.clone();
+    let mut pipe = redis::pipe();
+    for (id, _) in &rows {
+        pipe.exists(format!("presence:{}", id));
+    }
+    let online_flags: Vec<bool> = pipe
+        .query_async(&mut con)
+        .await
+        .unwrap_or_else(|_| vec![false; rows.len()]);
+
+    let friends = rows
+        .into_iter()
+        .zip(online_flags)
+        .map(|((user_id, username), online)| FriendInfo {
+            user_id,
+            username,
+            online,
+        })
+        .collect();
+
+    Ok(Json(friends))
 }
