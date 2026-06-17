@@ -1,14 +1,17 @@
 // src/components/MessageInput.tsx
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 export function MessageInput({
     onSend,
+    onTyping,
     disabled,
 }: {
-    onSend:   (text: string) => void;
-    disabled: boolean;
+    onSend:     (text: string) => void;
+    onTyping?:  () => void;
+    disabled:   boolean;
 }) {
     const [text, setText] = useState("");
+    const lastTypingSent  = useRef(0);
 
     function submit() {
         const trimmed = text.trim();
@@ -17,9 +20,18 @@ export function MessageInput({
         setText("");
     }
 
+    function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+        setText(e.target.value);
+        // Throttle: at most one TYPING frame every 2.5 s while the user types
+        const now = Date.now();
+        if (onTyping && now - lastTypingSent.current > 2500) {
+            lastTypingSent.current = now;
+            onTyping();
+        }
+    }
+
     return (
         <div className="grove-input-bar">
-            {/* Glass capsule inner wrapper — focus-within drives the ring */}
             <div className="grove-input-bar-inner">
                 <input
                     className="grove-message-field"
@@ -27,7 +39,7 @@ export function MessageInput({
                     value={text}
                     disabled={disabled}
                     aria-label="Message input"
-                    onChange={(e) => setText(e.target.value)}
+                    onChange={handleChange}
                     onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
                 />
                 <button

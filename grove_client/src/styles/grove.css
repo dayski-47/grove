@@ -2,53 +2,53 @@
 
 /* ── Variables ───────────────────────────────────────────── */
 :root {
-  /* Sky */
-  --sky-deep:  #0b5a9a;
-  --sky:       #1a7fd4;
-  --sky-mid:   #4aa8e8;
-  --sky-light: #9ecfef;
-  --sky-pale:  #daeef8;
+  /* Vista sky — vivid, not washed out */
+  --sky-deep:   #0a52a8;
+  --sky:        #1878cc;
+  --sky-mid:    #3aa4e8;
+  --sky-light:  #80ccf4;
+  --sky-pale:   #c0e8fa;
 
   /* Nature */
-  --leaf:       #2d8a3c;
-  --leaf-mid:   #4caa5c;
-  --leaf-light: #80cc8a;
+  --leaf:       #2a8838;
+  --leaf-mid:   #48aa58;
+  --leaf-light: #78cc80;
 
-  /* Glass */
-  --glass:          rgba(255, 255, 255, 0.75);
-  --glass-sidebar:  rgba(210, 232, 255, 0.68);
-  --glass-border:   rgba(255, 255, 255, 0.92);
-  --glass-border-b: rgba(175, 215, 245, 0.55);
+  /* Glass — the KEY values: low opacity = visible sky behind */
+  --glass-bg:       rgba(200, 228, 255, 0.22);
+  --glass-sidebar:  rgba(185, 220, 252, 0.24);
+  --glass-border:   rgba(255, 255, 255, 0.88);
+  --glass-border-b: rgba(160, 210, 245, 0.52);
+  --glass-shine:    rgba(255, 255, 255, 0.92);
 
   /* Text */
-  --text:       #0b1e30;
-  --text-mid:   #1a4a72;
-  --text-soft:  #3a6e98;
-  --text-muted: #7aaecf;
+  --text:       #0c1e2e;
+  --text-mid:   #1a4068;
+  --text-soft:  #2a6090;
+  --text-muted: #6a9ec0;
   --text-white: #ffffff;
 
   /* Feedback */
   --online: #22c55e;
-  --danger: #e05050;
+  --danger: #e04848;
 
   /* Layout */
   --radius:    10px;
   --radius-lg: 16px;
-  --radius-xl: 24px;
-  --sidebar-w: 248px;
+  --radius-xl: 22px;
+  --sidebar-w: 252px;
   --font: "Nunito", "Segoe UI", system-ui, sans-serif;
 }
 
 /* ── Reset ───────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
-
 button { font-family: var(--font); cursor: pointer; }
 input  { font-family: var(--font); }
 
-/* ── Body / Background ───────────────────────────────────── */
+/* ── Background — actual Vista sky with cloud shapes ─────── */
 /*
-  Frutiger Aero: sky-blue meets soft nature-green.
-  Radial highlights evoke clouds and ambient light.
+  Frutiger Aero = vivid sky + white cloud blobs + nature green at bottom.
+  Glass panels are nearly transparent so this scene bleeds through them.
 */
 body {
   font-family: var(--font);
@@ -56,11 +56,39 @@ body {
   line-height: 1.5;
   color: var(--text);
   background:
-    radial-gradient(ellipse 65% 45% at 12% 12%,  rgba(148, 202, 238, 0.72) 0%, transparent 55%),
-    radial-gradient(ellipse 50% 55% at 88% 22%,  rgba(100, 178, 224, 0.52) 0%, transparent 50%),
-    radial-gradient(ellipse 55% 48% at  8% 88%,  rgba(115, 198, 128, 0.48) 0%, transparent 52%),
-    radial-gradient(ellipse 60% 58% at 92% 88%,  rgba(138, 214, 150, 0.38) 0%, transparent 52%),
-    linear-gradient(155deg, #b6d6f0 0%, #cce4f4 22%, #c6e4ca 62%, #d6eed8 100%);
+    /* Left cloud cluster — three overlapping ellipses = puffy cloud */
+    radial-gradient(ellipse 130px 64px at  7% 18%, rgba(255,255,255,0.97) 0%, rgba(255,255,255,0.55) 45%, transparent 70%),
+    radial-gradient(ellipse  95px 56px at 13% 12%, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.45) 45%, transparent 70%),
+    radial-gradient(ellipse  72px 48px at 19% 20%, rgba(255,255,255,0.88) 0%, rgba(255,255,255,0.35) 45%, transparent 70%),
+    /* Centre cloud cluster */
+    radial-gradient(ellipse 112px 58px at 43% 14%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.50) 45%, transparent 70%),
+    radial-gradient(ellipse  84px 52px at 51%  8%, rgba(255,255,255,0.90) 0%, rgba(255,255,255,0.42) 45%, transparent 70%),
+    radial-gradient(ellipse  66px 44px at 58% 15%, rgba(255,255,255,0.84) 0%, rgba(255,255,255,0.34) 45%, transparent 70%),
+    /* Right cloud cluster */
+    radial-gradient(ellipse 100px 56px at 77% 16%, rgba(255,255,255,0.93) 0%, rgba(255,255,255,0.48) 45%, transparent 70%),
+    radial-gradient(ellipse  74px 48px at 85%  9%, rgba(255,255,255,0.88) 0%, rgba(255,255,255,0.40) 45%, transparent 70%),
+    radial-gradient(ellipse  55px 38px at 92% 18%, rgba(255,255,255,0.80) 0%, rgba(255,255,255,0.30) 45%, transparent 70%),
+    /* Wispy high-altitude clouds */
+    radial-gradient(ellipse  52px 28px at 30%  6%, rgba(255,255,255,0.72) 0%, transparent 65%),
+    radial-gradient(ellipse  45px 24px at 65%  4%, rgba(255,255,255,0.68) 0%, transparent 65%),
+    radial-gradient(ellipse  38px 20px at 96%  3%, rgba(255,255,255,0.60) 0%, transparent 65%),
+    /* Nature / grass at bottom — deep green rising from below */
+    radial-gradient(ellipse 210% 44% at  50% 116%, rgba(52,148,52,0.84) 0%, rgba(72,168,52,0.55) 22%, transparent 48%),
+    radial-gradient(ellipse  85%  30% at   0% 105%, rgba(44,130,44,0.64) 0%, transparent 50%),
+    radial-gradient(ellipse  85%  30% at 100% 105%, rgba(44,130,44,0.64) 0%, transparent 50%),
+    /* Vista sky gradient — deep royal blue → sky blue → pale aqua → grass green */
+    linear-gradient(180deg,
+      #0c5ab4  0%,
+      #1878cc  9%,
+      #2492dc 20%,
+      #3aaae8 32%,
+      #5cbdf2 46%,
+      #8ad4f8 58%,
+      #b8e8fa 69%,
+      #d0f0e8 79%,
+      #c2eca2 90%,
+      #98d870 100%
+    );
   background-attachment: fixed;
   min-height: 100vh;
 }
@@ -74,19 +102,28 @@ body {
   padding: 24px;
 }
 
+/* Vista-style floating glass dialog */
 .grove-auth-card {
   width: 100%;
-  max-width: 360px;
-  background: var(--glass);
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
-  border: 1px solid var(--glass-border);
+  max-width: 372px;
+  /* Top-half gloss fading into transparent glass body */
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.58)  0%,
+      rgba(255,255,255,0.14) 32%,
+      rgba(205,230,255,0.30) 100%
+    );
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid rgba(255,255,255,0.92);
   border-radius: var(--radius-xl);
   padding: 44px 36px 36px;
   box-shadow:
-    0 8px 48px rgba(11, 90, 154, 0.18),
-    0 2px 10px rgba(11, 90, 154, 0.10),
-    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+    0 0 0 1px rgba(0,60,160,0.12),
+    0 12px 56px rgba(0,60,180,0.22),
+    0  4px 16px rgba(0,80,200,0.14),
+    inset 0  1px 0 var(--glass-shine),
+    inset 0 -1px 0 rgba(0,60,160,0.05);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -97,12 +134,29 @@ body {
   margin-bottom: 22px;
 }
 
+/* CSS glass orb — the Frutiger Aero signature shape */
 .grove-logo-mark {
-  font-size: 38px;
-  display: block;
-  margin-bottom: 6px;
-  filter: drop-shadow(0 2px 8px rgba(46, 138, 60, 0.45));
+  width: 68px;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
   line-height: 1;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.94);
+  background:
+    radial-gradient(circle at 38% 28%,
+      rgba(255,255,255,0.95)  0%,
+      rgba(160,220,168,0.88) 22%,
+      #2e9040                50%,
+      #1a5828               100%
+    );
+  box-shadow:
+    0 0 0 1px rgba(0,80,0,0.18),
+    0 8px 24px rgba(0,100,0,0.30),
+    inset 0 1px 0 rgba(255,255,255,0.96);
 }
 
 .grove-logo h1 {
@@ -110,7 +164,7 @@ body {
   font-weight: 700;
   color: var(--sky-deep);
   letter-spacing: -0.5px;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.85);
 }
 
 .grove-tagline {
@@ -120,60 +174,69 @@ body {
   margin-top: 3px;
 }
 
-/* Shared input */
+/* Shared form input */
 .grove-input {
   width: 100%;
   padding: 11px 14px;
-  border: 1.5px solid var(--glass-border-b);
+  border: 1.5px solid rgba(255,255,255,0.80);
+  border-bottom-color: var(--glass-border-b);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.72);
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
   outline: none;
   transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+  box-shadow: inset 0 1px 3px rgba(0,60,160,0.07);
 }
-
 .grove-input:focus {
   border-color: var(--sky-mid);
-  background: #fff;
-  box-shadow: 0 0 0 3px rgba(74, 168, 232, 0.20);
+  background: rgba(255,255,255,0.90);
+  box-shadow:
+    0 0 0 3px rgba(58,164,232,0.22),
+    inset 0 1px 3px rgba(0,60,160,0.04);
 }
-
 .grove-input::placeholder { color: var(--text-muted); font-weight: 400; }
 
-/* Aero glossy button */
+/* Aero glossy button — top-half gloss is the Vista signature */
 .grove-button {
   width: 100%;
   padding: 12px;
   margin-top: 2px;
-  border: 1px solid rgba(11, 90, 154, 0.55);
+  border: 1px solid rgba(8, 75, 155, 0.55);
+  border-top-color: rgba(255,255,255,0.55);
   border-radius: var(--radius);
   font-size: 14px;
   font-weight: 700;
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
-  /* Dual gradient: top gloss + base colour */
+  text-shadow: 0 1px 2px rgba(0,0,0,0.30);
   background:
+    /* Top-half specular gloss: white → transparent at 50% */
     linear-gradient(180deg,
-      rgba(255,255,255,0.40) 0%,
-      rgba(255,255,255,0.06) 46%,
-      transparent           50%,
-      rgba(0,0,0,0.04)      100%),
-    linear-gradient(180deg, #52beff 0%, #1a7fd4 47%, #0d66c0 100%);
+      rgba(255,255,255,0.44)  0%,
+      rgba(255,255,255,0.10) 48%,
+      transparent            50%,
+      rgba(0,0,0,0.04)      100%
+    ),
+    /* Base colour */
+    linear-gradient(180deg, #52beff 0%, #1a7fd4 48%, #0d66c0 100%);
   box-shadow:
-    0 2px 12px rgba(11, 90, 154, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.48);
+    0 0 0 1px rgba(0,55,140,0.25),
+    0 2px 12px rgba(10,82,168,0.38),
+    inset 0  1px 0 rgba(255,255,255,0.55),
+    inset 0 -1px 0 rgba(0,60,180,0.18);
   transition: filter 0.15s, box-shadow 0.15s, transform 0.10s;
 }
-
 .grove-button:hover {
-  filter: brightness(1.07);
-  box-shadow: 0 4px 18px rgba(11, 90, 154, 0.45), inset 0 1px 0 rgba(255,255,255,0.48);
+  filter: brightness(1.08);
+  box-shadow:
+    0 0 0 1px rgba(0,55,140,0.30),
+    0 4px 18px rgba(10,82,168,0.48),
+    inset 0 1px 0 rgba(255,255,255,0.55);
 }
 .grove-button:active  { transform: translateY(1px); }
 .grove-button:disabled {
-  opacity: 0.55;
+  opacity: 0.52;
   cursor: not-allowed;
   filter: none;
   transform: none;
@@ -194,9 +257,9 @@ body {
 .grove-link:hover { color: var(--sky-deep); }
 
 .grove-error {
-  background: rgba(224, 80, 80, 0.10);
+  background: rgba(224, 72, 72, 0.10);
   color: var(--danger);
-  border: 1px solid rgba(224, 80, 80, 0.28);
+  border: 1px solid rgba(224, 72, 72, 0.28);
   border-radius: var(--radius);
   padding: 9px 13px;
   font-size: 13px;
@@ -210,47 +273,84 @@ body {
   overflow: hidden;
 }
 
-/* ── Sidebar ─────────────────────────────────────────────── */
+/* ── Sidebar — Vista glass panel ─────────────────────────── */
 .grove-sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
-  /* Aero glass panel */
+  /*
+    Vista glass formula:
+    - Top 38% is the "gloss zone" (white → transparent)
+    - Body is nearly transparent glass tint
+    Sky background bleeds through the bottom two-thirds.
+  */
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.22) 0%, transparent 30%),
+    linear-gradient(180deg,
+      rgba(255,255,255,0.42)  0%,
+      rgba(255,255,255,0.08) 38%,
+      transparent            38%
+    ),
     var(--glass-sidebar);
-  backdrop-filter: blur(26px) saturate(165%);
-  -webkit-backdrop-filter: blur(26px) saturate(165%);
+  backdrop-filter: blur(28px) saturate(185%);
+  -webkit-backdrop-filter: blur(28px) saturate(185%);
   border-right: 1px solid var(--glass-border);
-  /* inner right edge glint */
-  box-shadow: 2px 0 18px rgba(11, 90, 154, 0.08), inset -1px 0 0 rgba(255,255,255,0.65);
+  box-shadow:
+    inset -1px 0 0 rgba(255,255,255,0.70),
+    inset  1px 0 0 rgba(255,255,255,0.20),
+    2px 0 24px rgba(0,80,180,0.10);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
+/* Vista titlebar-style header */
 .grove-sidebar-header {
   flex-shrink: 0;
   padding: 14px 16px 12px;
   display: flex;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.62);
-  background: rgba(255, 255, 255, 0.28);
+  border-bottom: 1px solid rgba(255,255,255,0.78);
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.52)  0%,
+      rgba(255,255,255,0.12) 45%,
+      rgba(200,228,255,0.20) 100%
+    );
+  box-shadow: 0 1px 0 rgba(200,230,255,0.48);
 }
 
+/* Glass orb for sidebar icon */
 .grove-app-icon {
-  font-size: 20px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
   line-height: 1;
-  filter: drop-shadow(0 1px 4px rgba(46, 138, 60, 0.50));
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.92);
+  background:
+    radial-gradient(circle at 38% 30%,
+      rgba(255,255,255,0.94)  0%,
+      rgba(160,220,168,0.85) 26%,
+      #2e9040                56%,
+      #1a5828               100%
+    );
+  box-shadow:
+    0 0 0 1px rgba(0,80,0,0.18),
+    0 2px 8px rgba(0,100,0,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.94);
+  flex-shrink: 0;
 }
 
 .grove-app-name {
   flex: 1;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--sky-deep);
   letter-spacing: -0.2px;
-  text-shadow: 0 1px 0 rgba(255,255,255,0.7);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.75);
 }
 
 .grove-conn-dot {
@@ -261,10 +361,12 @@ body {
   transition: background 0.3s, box-shadow 0.3s;
 }
 .grove-conn-dot.online {
-  background: var(--online);
+  background: radial-gradient(circle at 38% 35%, rgba(255,255,255,0.9) 0%, #22c55e 40%, #15803d 100%);
   box-shadow: 0 0 0 2px rgba(34,197,94,0.22), 0 0 8px rgba(34,197,94,0.55);
 }
-.grove-conn-dot.offline { background: #aabacf; }
+.grove-conn-dot.offline {
+  background: radial-gradient(circle at 38% 35%, rgba(255,255,255,0.6) 0%, #9ab8cc 45%, #6a8ea8 100%);
+}
 
 /* Scrollable content region */
 .grove-sidebar-scroll {
@@ -272,11 +374,11 @@ body {
   overflow-y: auto;
   padding: 8px 10px 6px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(74,168,232,0.28) transparent;
+  scrollbar-color: rgba(58,164,232,0.28) transparent;
 }
 .grove-sidebar-scroll::-webkit-scrollbar { width: 4px; }
 .grove-sidebar-scroll::-webkit-scrollbar-thumb {
-  background: rgba(74,168,232,0.28);
+  background: rgba(58,164,232,0.28);
   border-radius: 4px;
 }
 
@@ -289,8 +391,9 @@ body {
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-soft);
   padding: 10px 6px 4px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.65);
 }
 
 .grove-section-add {
@@ -307,7 +410,7 @@ body {
   justify-content: center;
   transition: color 0.15s, background 0.15s;
 }
-.grove-section-add:hover { color: var(--sky); background: rgba(74,168,232,0.12); }
+.grove-section-add:hover { color: var(--sky); background: rgba(58,164,232,0.12); }
 
 /* Channel buttons */
 .grove-channels-list {
@@ -330,20 +433,24 @@ body {
   font-weight: 500;
   text-align: left;
   width: 100%;
-  transition: background 0.14s, color 0.14s;
+  transition: background 0.14s, color 0.14s, box-shadow 0.14s;
 }
 .grove-channel-btn:hover {
-  background: rgba(255,255,255,0.52);
+  background: rgba(255,255,255,0.46);
   color: var(--text-mid);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.70);
 }
+/* Vista selected state: glassy blue highlight with inner glow */
 .grove-channel-btn.active {
-  /* Aero selected state: glassy blue tint */
   background:
-    linear-gradient(135deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.14) 100%),
-    rgba(26,127,212,0.18);
+    linear-gradient(135deg, rgba(255,255,255,0.48) 0%, rgba(255,255,255,0.12) 100%),
+    rgba(24,120,204,0.22);
   color: var(--sky-deep);
   font-weight: 700;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.62);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.72),
+    inset 0 -1px 0 rgba(0,80,180,0.10),
+    0 0 0 1px rgba(24,120,204,0.20);
 }
 
 .grove-channel-hash {
@@ -358,7 +465,13 @@ body {
 .grove-sidebar-divider {
   height: 1px;
   margin: 6px 2px;
-  background: linear-gradient(90deg, transparent, rgba(175,215,245,0.60) 20%, rgba(175,215,245,0.60) 80%, transparent);
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255,255,255,0.75) 20%,
+    rgba(175,215,245,0.55) 50%,
+    rgba(255,255,255,0.75) 80%,
+    transparent
+  );
 }
 
 /* Online users */
@@ -377,14 +490,18 @@ body {
   border-radius: var(--radius);
   transition: background 0.14s;
 }
-.grove-online-row:hover { background: rgba(255,255,255,0.48); }
+.grove-online-row:hover {
+  background: rgba(255,255,255,0.44);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
+}
 
+/* Vista glass sphere indicator */
 .grove-user-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--online);
-  box-shadow: 0 0 0 2px rgba(34,197,94,0.18), 0 0 6px rgba(34,197,94,0.42);
+  background: radial-gradient(circle at 38% 35%, rgba(255,255,255,0.9) 0%, #22c55e 42%, #15803d 100%);
+  box-shadow: 0 0 0 1.5px rgba(0,100,0,0.18), 0 0 6px rgba(34,197,94,0.45);
   flex-shrink: 0;
 }
 
@@ -396,8 +513,10 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
 }
 
+/* Call button — hidden until row hover */
 .grove-call-btn {
   background: none;
   border: 1px solid transparent;
@@ -412,16 +531,23 @@ body {
 .grove-online-row:hover .grove-call-btn { opacity: 1; }
 .grove-call-btn:hover {
   color: var(--leaf);
-  border-color: rgba(76,170,92,0.40);
-  background: rgba(76,170,92,0.10);
+  border-color: rgba(72,170,88,0.42);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.05) 50%, rgba(0,0,0,0.02) 100%),
+    rgba(72,170,88,0.12);
 }
 
-/* Sidebar bottom */
+/* Sidebar bottom bar */
 .grove-sidebar-bottom {
   flex-shrink: 0;
   padding: 8px 10px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.60);
-  background: rgba(255, 255, 255, 0.24);
+  border-top: 1px solid rgba(255,255,255,0.68);
+  background:
+    linear-gradient(0deg,
+      rgba(255,255,255,0.34)  0%,
+      rgba(255,255,255,0.08) 100%
+    ),
+    rgba(200,225,255,0.18);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -436,18 +562,21 @@ body {
 .grove-input-small {
   flex: 1;
   padding: 8px 10px;
-  border: 1.5px solid var(--glass-border-b);
+  border: 1.5px solid rgba(255,255,255,0.78);
+  border-bottom-color: var(--glass-border-b);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.70);
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
   outline: none;
   transition: border-color 0.18s, box-shadow 0.18s;
+  box-shadow: inset 0 1px 3px rgba(0,60,160,0.06);
 }
 .grove-input-small:focus {
   border-color: var(--sky-mid);
-  box-shadow: 0 0 0 2px rgba(74,168,232,0.18);
+  background: rgba(255,255,255,0.88);
+  box-shadow: 0 0 0 2px rgba(58,164,232,0.20);
 }
 .grove-input-small::placeholder { color: var(--text-muted); font-weight: 400; }
 
@@ -456,16 +585,24 @@ body {
   padding: 8px 12px;
   width: auto;
   margin: 0;
-  border: 1px solid rgba(11, 90, 154, 0.45);
+  border: 1px solid rgba(8,75,155,0.48);
+  border-top-color: rgba(255,255,255,0.55);
   border-radius: var(--radius);
   font-size: 13px;
   font-weight: 700;
   color: #fff;
-  text-shadow: 0 1px 1px rgba(0,0,0,0.22);
+  text-shadow: 0 1px 1px rgba(0,0,0,0.24);
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.05) 48%, rgba(0,0,0,0.04) 100%),
+    linear-gradient(180deg,
+      rgba(255,255,255,0.42)  0%,
+      rgba(255,255,255,0.08) 48%,
+      transparent            50%,
+      rgba(0,0,0,0.04)      100%
+    ),
     linear-gradient(180deg, #4ab8f8 0%, #1a7fd4 100%);
-  box-shadow: 0 1px 6px rgba(11,90,154,0.28), inset 0 1px 0 rgba(255,255,255,0.40);
+  box-shadow:
+    0 1px 6px rgba(10,82,168,0.30),
+    inset 0 1px 0 rgba(255,255,255,0.48);
   transition: filter 0.15s;
   white-space: nowrap;
 }
@@ -476,41 +613,51 @@ body {
   align-items: center;
   justify-content: center;
   padding: 8px;
-  background: none;
-  border: 1px solid var(--glass-border-b);
+  background: rgba(255,255,255,0.38);
+  border: 1px solid rgba(255,255,255,0.80);
+  border-bottom-color: var(--glass-border-b);
   border-radius: var(--radius);
   color: var(--text-muted);
   font-size: 12.5px;
   font-weight: 600;
   transition: border-color 0.18s, color 0.18s, background 0.18s;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
 }
 .grove-logout:hover {
-  border-color: rgba(224, 80, 80, 0.42);
+  border-color: rgba(224, 72, 72, 0.44);
   color: var(--danger);
-  background: rgba(224, 80, 80, 0.06);
+  background: rgba(255,255,255,0.55);
 }
 
-/* ── Main area ───────────────────────────────────────────── */
+/* ── Main area — glass content plane ─────────────────────── */
 .grove-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: rgba(236, 248, 255, 0.52);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* Barely-there tint: sky is fully visible behind messages */
+  background: rgba(220, 240, 255, 0.16);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
 }
 
-/* ── Channel header ──────────────────────────────────────── */
+/* ── Channel header — Vista titlebar feel ────────────────── */
 .grove-channel-header {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 11px 24px;
-  background: rgba(255, 255, 255, 0.62);
-  border-bottom: 1px solid var(--glass-border-b);
-  box-shadow: 0 1px 8px rgba(11, 90, 154, 0.06);
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.50)  0%,
+      rgba(255,255,255,0.10) 52%,
+      rgba(200,228,255,0.18) 100%
+    );
+  border-bottom: 1px solid rgba(255,255,255,0.80);
+  box-shadow:
+    inset 0  1px 0 rgba(255,255,255,0.94),
+    0 2px 12px rgba(0,80,160,0.08);
 }
 
 .grove-ch-hash {
@@ -518,7 +665,8 @@ body {
   font-weight: 700;
   color: var(--sky-mid);
   line-height: 1;
-  opacity: 0.85;
+  opacity: 0.90;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.70);
 }
 
 .grove-ch-name {
@@ -526,21 +674,22 @@ body {
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.1px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.60);
 }
 
 /* ── Messages ────────────────────────────────────────────── */
 .grove-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 0 8px;
+  padding: 16px 0 4px;
   display: flex;
   flex-direction: column;
   scrollbar-width: thin;
-  scrollbar-color: rgba(74,168,232,0.22) transparent;
+  scrollbar-color: rgba(58,164,232,0.22) transparent;
 }
 .grove-messages::-webkit-scrollbar { width: 4px; }
 .grove-messages::-webkit-scrollbar-thumb {
-  background: rgba(74,168,232,0.22);
+  background: rgba(58,164,232,0.22);
   border-radius: 4px;
 }
 
@@ -553,9 +702,12 @@ body {
   transition: background 0.10s;
   position: relative;
 }
-.grove-msg-row:hover { background: rgba(255,255,255,0.38); }
+.grove-msg-row:hover {
+  background: rgba(255,255,255,0.32);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.52), inset 0 -1px 0 rgba(255,255,255,0.30);
+}
 
-/* Coloured avatar circle */
+/* Coloured avatar circle with glass inner highlight */
 .grove-avatar {
   width: 36px;
   height: 36px;
@@ -567,11 +719,13 @@ body {
   font-size: 12px;
   font-weight: 700;
   color: rgba(255,255,255,0.95);
-  text-shadow: 0 1px 2px rgba(0,0,0,0.28);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.28);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.30);
+  border: 1px solid rgba(255,255,255,0.55);
+  box-shadow:
+    0 2px 8px rgba(0,0,0,0.14),
+    inset 0 1px 0 rgba(255,255,255,0.40);
   margin-top: 2px;
   user-select: none;
-  flex-shrink: 0;
 }
 
 .grove-msg-body { flex: 1; min-width: 0; }
@@ -587,6 +741,7 @@ body {
   font-size: 14px;
   font-weight: 700;
   color: var(--sky-deep);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
 }
 .grove-msg-author.own { color: var(--leaf); }
 
@@ -600,12 +755,13 @@ body {
   font-size: 14px;
   font-weight: 400;
   color: var(--text);
-  line-height: 1.45;
+  line-height: 1.48;
   word-break: break-word;
   white-space: pre-wrap;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.42);
 }
 
-/* Continuation row — same user, short gap, hide avatar */
+/* Continuation row — same user, short gap */
 .grove-msg-row.grove-cont { padding-top: 1px; padding-bottom: 1px; }
 
 .grove-cont-spacer {
@@ -627,7 +783,7 @@ body {
 }
 .grove-msg-row.grove-cont:hover .grove-cont-time { opacity: 1; }
 
-/* Day separator */
+/* Day separator — Vista glowing divider */
 .grove-day-divider {
   display: flex;
   align-items: center;
@@ -640,7 +796,13 @@ body {
   content: "";
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(175,215,245,0.55), transparent);
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255,255,255,0.80) 15%,
+    rgba(175,215,245,0.60) 50%,
+    rgba(255,255,255,0.80) 85%,
+    transparent
+  );
 }
 .grove-day-label {
   font-size: 11px;
@@ -649,31 +811,82 @@ body {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.70);
 }
 
-/* ── Input bar ───────────────────────────────────────────── */
+/* ── Typing indicator ────────────────────────────────────── */
+.grove-typing {
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 24px;
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 500;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.60);
+}
+
+/* Animated ellipsis dots */
+.grove-typing-dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.grove-typing-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--sky-mid);
+  animation: grove-blink 1.4s infinite both;
+}
+.grove-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.grove-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes grove-blink {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+  40%           { opacity: 1;    transform: scale(1.15); }
+}
+
+/* ── Input bar — glass bottom panel ─────────────────────── */
 .grove-input-bar {
   flex-shrink: 0;
-  padding: 10px 20px 16px;
-  background: rgba(255, 255, 255, 0.66);
-  border-top: 1px solid var(--glass-border-b);
-  box-shadow: 0 -2px 12px rgba(11, 90, 154, 0.05);
+  padding: 8px 20px 16px;
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.34)  0%,
+      rgba(255,255,255,0.08) 100%
+    ),
+    rgba(210,232,255,0.28);
+  border-top: 1px solid rgba(255,255,255,0.80);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.92),
+    0 -2px 12px rgba(0,80,160,0.06);
 }
 
-/* Inner wrapper gives the field a glass "capsule" */
+/* Glass capsule wrapping the input + send button */
 .grove-input-bar-inner {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(255,255,255,0.82);
-  border: 1.5px solid var(--glass-border-b);
+  background: rgba(255,255,255,0.75);
+  border: 1.5px solid rgba(255,255,255,0.88);
+  border-bottom-color: var(--glass-border-b);
   border-radius: var(--radius-lg);
   padding: 4px 6px 4px 16px;
   transition: border-color 0.18s, box-shadow 0.18s;
+  box-shadow:
+    inset 0 1px 3px rgba(0,60,160,0.06),
+    0 1px 0 rgba(255,255,255,0.55);
 }
 .grove-input-bar-inner:focus-within {
   border-color: var(--sky-mid);
-  box-shadow: 0 0 0 3px rgba(74,168,232,0.16);
+  background: rgba(255,255,255,0.88);
+  box-shadow:
+    0 0 0 3px rgba(58,164,232,0.18),
+    inset 0 1px 3px rgba(0,60,160,0.04);
 }
 
 .grove-message-field {
@@ -691,22 +904,30 @@ body {
 /* Aero send button */
 .grove-send {
   padding: 8px 18px;
-  border: 1px solid rgba(11, 90, 154, 0.45);
+  border: 1px solid rgba(8,75,155,0.48);
+  border-top-color: rgba(255,255,255,0.55);
   border-radius: 10px;
   font-size: 13px;
   font-weight: 700;
   color: #fff;
-  text-shadow: 0 1px 1px rgba(0,0,0,0.22);
+  text-shadow: 0 1px 1px rgba(0,0,0,0.24);
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.05) 48%, rgba(0,0,0,0.04) 100%),
+    linear-gradient(180deg,
+      rgba(255,255,255,0.40)  0%,
+      rgba(255,255,255,0.08) 48%,
+      transparent            50%,
+      rgba(0,0,0,0.04)      100%
+    ),
     linear-gradient(180deg, #4ab8f8 0%, #1a7fd4 100%);
-  box-shadow: 0 1px 6px rgba(11,90,154,0.25), inset 0 1px 0 rgba(255,255,255,0.42);
+  box-shadow:
+    0 1px 6px rgba(10,82,168,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.50);
   transition: filter 0.15s, transform 0.10s;
 }
-.grove-send:hover   { filter: brightness(1.08); }
+.grove-send:hover   { filter: brightness(1.09); }
 .grove-send:active  { transform: scale(0.97); }
 .grove-send:disabled {
-  opacity: 0.42;
+  opacity: 0.40;
   cursor: not-allowed;
   filter: none;
   transform: none;
@@ -720,23 +941,24 @@ body {
   align-items: center;
   gap: 14px;
   padding: 10px 24px;
-  border-bottom: 1px solid rgba(74,168,232,0.30);
+  border-bottom: 1px solid rgba(58,164,232,0.30);
   background:
-    linear-gradient(135deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.14) 100%),
-    rgba(26,127,212,0.10);
+    linear-gradient(135deg, rgba(255,255,255,0.44) 0%, rgba(255,255,255,0.12) 100%),
+    rgba(24,120,204,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
 }
 
 .grove-call-notification {
   background:
-    linear-gradient(135deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.14) 100%),
-    rgba(34,197,94,0.10);
-  border-bottom-color: rgba(34,197,94,0.30);
+    linear-gradient(135deg, rgba(255,255,255,0.44) 0%, rgba(255,255,255,0.12) 100%),
+    rgba(34,197,94,0.12);
+  border-bottom-color: rgba(34,197,94,0.32);
 }
 
 .grove-call-active {
   background:
-    linear-gradient(135deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.12) 100%),
-    rgba(26,127,212,0.14);
+    linear-gradient(135deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.10) 100%),
+    rgba(24,120,204,0.16);
 }
 
 .grove-call-who {
@@ -744,23 +966,29 @@ body {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-mid);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
 }
 
 .grove-call-actions { display: flex; gap: 8px; }
 
-/* Aero green accept */
+/* Aero green accept button */
 .grove-call-accept {
   padding: 7px 16px;
-  border: 1px solid rgba(45,138,60,0.55);
+  border: 1px solid rgba(42,136,56,0.55);
+  border-top-color: rgba(255,255,255,0.55);
   border-radius: var(--radius);
   font-size: 13px;
   font-weight: 700;
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.24);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.26);
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.05) 50%, rgba(0,0,0,0.03) 100%),
-    linear-gradient(180deg, #5cc05c 0%, #2d8a3c 100%);
-  box-shadow: 0 1px 6px rgba(45,138,60,0.30), inset 0 1px 0 rgba(255,255,255,0.42);
+    linear-gradient(180deg,
+      rgba(255,255,255,0.38)  0%,
+      rgba(255,255,255,0.06) 50%,
+      rgba(0,0,0,0.03)      100%
+    ),
+    linear-gradient(180deg, #5cc05c 0%, #2a8838 100%);
+  box-shadow: 0 1px 6px rgba(42,136,56,0.32), inset 0 1px 0 rgba(255,255,255,0.45);
   transition: filter 0.15s;
 }
 .grove-call-accept:hover { filter: brightness(1.08); }
@@ -768,31 +996,44 @@ body {
 .grove-call-decline,
 .grove-call-hangup {
   padding: 7px 16px;
-  background: rgba(255,255,255,0.72);
-  border: 1px solid rgba(224,80,80,0.44);
+  background: rgba(255,255,255,0.68);
+  border: 1px solid rgba(224,72,72,0.44);
   border-radius: var(--radius);
   font-size: 13px;
   font-weight: 700;
   color: var(--danger);
   transition: background 0.15s, color 0.15s, border-color 0.15s;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
 }
 .grove-call-decline:hover,
 .grove-call-hangup:hover {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.05) 50%, rgba(0,0,0,0.03) 100%),
-    linear-gradient(180deg, #f07070 0%, #e05050 100%);
+    linear-gradient(180deg,
+      rgba(255,255,255,0.22)  0%,
+      rgba(255,255,255,0.05) 50%,
+      rgba(0,0,0,0.03)      100%
+    ),
+    linear-gradient(180deg, #f07070 0%, #e04848 100%);
   color: #fff;
-  border-color: rgba(224,80,80,0.70);
+  border-color: rgba(224,72,72,0.72);
 }
 
 /* ── Scrollbar (global) ──────────────────────────────────── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(74,168,232,0.20) transparent;
+  scrollbar-color: rgba(58,164,232,0.20) transparent;
 }
 
 /* ── Cursor ──────────────────────────────────────────────── */
 button, [role="button"] { cursor: pointer; }
+
+/* ── Z-index scale ───────────────────────────────────────── */
+:root {
+  --z-tiles:   10;
+  --z-windows: 100;
+  --z-taskbar: 200;
+  --z-popup:   300;
+}
 
 /* ── Reduced motion ──────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -800,4 +1041,842 @@ button, [role="button"] { cursor: pointer; }
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ══════════════════════════════════════════════════════════
+   WIN7-STYLE LOGIN SCREEN
+   ══════════════════════════════════════════════════════════ */
+
+.grove-login {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: hidden;
+}
+
+@keyframes grove-login-arrive {
+  from { opacity: 0; transform: translateY(26px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+.grove-login-scene {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 360px;
+}
+
+.grove-login-orb {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 52px;
+  line-height: 1;
+  border: 2px solid rgba(255,255,255,0.94);
+  background:
+    radial-gradient(circle at 38% 28%,
+      rgba(255,255,255,0.95)  0%,
+      rgba(155,215,165,0.88) 24%,
+      #2e9040                52%,
+      #1a5828               100%
+    );
+  box-shadow:
+    0 0 0 2px rgba(0,80,0,0.15),
+    0 12px 36px rgba(0,100,0,0.28),
+    inset 0 2px 0 rgba(255,255,255,0.96);
+  animation: grove-login-arrive 0.7s cubic-bezier(0.22,1,0.36,1) 0.0s both;
+  margin-bottom: 14px;
+}
+
+.grove-login-wordmark {
+  text-align: center;
+  animation: grove-login-arrive 0.7s cubic-bezier(0.22,1,0.36,1) 0.08s both;
+  margin-bottom: 6px;
+}
+
+.grove-login-wordmark h1 {
+  font-size: 40px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.8px;
+  text-shadow:
+    0 2px 12px rgba(0,60,130,0.55),
+    0 1px 0    rgba(0,0,0,0.18);
+}
+
+.grove-login-wordmark p {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.82);
+  text-shadow: 0 1px 4px rgba(0,60,130,0.40);
+  margin-top: 2px;
+}
+
+.grove-login-form {
+  width: 100%;
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.45)  0%,
+      rgba(255,255,255,0.10) 32%,
+      rgba(210,232,255,0.28) 100%
+    );
+  backdrop-filter: blur(36px) saturate(200%);
+  -webkit-backdrop-filter: blur(36px) saturate(200%);
+  border: 1px solid rgba(255,255,255,0.90);
+  border-radius: 20px;
+  padding: 22px 20px 18px;
+  box-shadow:
+    0 0 0 1px rgba(0,60,160,0.10),
+    0 10px 40px rgba(0,70,180,0.20),
+    inset 0 1px 0 rgba(255,255,255,0.95);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: grove-login-arrive 0.7s cubic-bezier(0.22,1,0.36,1) 0.16s both;
+  margin-top: 8px;
+}
+
+.grove-login-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.grove-login-go {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(8,75,155,0.50);
+  border-top-color: rgba(255,255,255,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.15) 40%, transparent 55%),
+    linear-gradient(135deg, #4ab8f8 0%, #1a7fd4 50%, #0d66c0 100%);
+  box-shadow:
+    0 0 0 1px rgba(0,55,140,0.22),
+    0 3px 12px rgba(10,82,168,0.42),
+    inset 0 1px 0 rgba(255,255,255,0.65);
+  transition: filter 0.15s, transform 0.10s, box-shadow 0.15s;
+}
+.grove-login-go:hover {
+  filter: brightness(1.10);
+  box-shadow: 0 0 0 1px rgba(0,55,140,0.30), 0 5px 18px rgba(10,82,168,0.52), inset 0 1px 0 rgba(255,255,255,0.65);
+}
+.grove-login-go:active  { transform: scale(0.93); }
+.grove-login-go:disabled { opacity: 0.45; cursor: not-allowed; filter: none; transform: none; }
+
+.grove-login-switch {
+  animation: grove-login-arrive 0.7s cubic-bezier(0.22,1,0.36,1) 0.24s both;
+  margin-top: 4px;
+}
+
+.grove-login-bar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 52px;
+  background: rgba(0,30,90,0.22);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255,255,255,0.22);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 16px;
+}
+
+.grove-login-bar-time {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.82);
+  text-shadow: 0 1px 4px rgba(0,40,100,0.50);
+  letter-spacing: 0.03em;
+  margin-right: auto;
+}
+
+.grove-login-bar-btn {
+  width: 32px;
+  height: 32px;
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.30);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.80);
+  transition: background 0.15s, border-color 0.15s;
+}
+.grove-login-bar-btn:hover {
+  background: rgba(255,255,255,0.24);
+  border-color: rgba(255,255,255,0.55);
+  color: #fff;
+}
+
+/* ══════════════════════════════════════════════════════════
+   WII U HOME SCREEN
+   ══════════════════════════════════════════════════════════ */
+
+.grove-home {
+  position: fixed;
+  inset: 0;
+  padding-bottom: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.grove-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  padding: 32px 40px;
+  justify-content: center;
+  align-content: center;
+  max-width: 960px;
+  width: 100%;
+  position: relative;
+  z-index: var(--z-tiles);
+}
+
+@keyframes grove-float {
+  0%, 100% { transform: translateY(0px);  }
+  50%       { transform: translateY(-7px); }
+}
+
+.grove-tile-float {
+  animation: grove-float 4.2s ease-in-out infinite;
+}
+
+.grove-tile {
+  width: 148px;
+  height: 120px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.85);
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.36)  0%,
+      rgba(255,255,255,0.08) 40%,
+      rgba(210,235,255,0.28) 100%
+    );
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  box-shadow:
+    0 0 0 1px rgba(0,60,160,0.10),
+    0 6px 24px rgba(0,60,180,0.14),
+    inset 0 1px 0 rgba(255,255,255,0.90);
+  transition: transform 0.22s cubic-bezier(0.22,1,0.36,1), box-shadow 0.22s ease-out;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font);
+}
+
+.grove-tile:hover {
+  transform: scale(1.06) translateY(-2px);
+  box-shadow:
+    0 0 0 1px rgba(0,60,160,0.18),
+    0 14px 40px rgba(0,80,200,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.95);
+}
+
+.grove-tile:active {
+  transform: scale(0.95);
+  transition: transform 0.10s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+.grove-tile-open {
+  box-shadow:
+    0 0 0 2px rgba(58,164,232,0.55),
+    0 8px 32px rgba(0,80,200,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.95);
+}
+
+.grove-tile-accent {
+  height: 40px;
+  width: 100%;
+  flex-shrink: 0;
+  opacity: 0.90;
+  border-radius: 18px 18px 0 0;
+  position: relative;
+}
+.grove-tile-accent::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 18px 18px 0 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.36) 0%, rgba(255,255,255,0) 60%);
+}
+
+.grove-tile-body {
+  flex: 1;
+  padding: 8px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.grove-tile-hash {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--sky-mid);
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.60);
+}
+
+.grove-tile-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.1px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grove-tile-new {
+  cursor: default;
+  border-style: dashed;
+  border-color: rgba(255,255,255,0.55);
+}
+
+.grove-tile-input {
+  flex: 1;
+  background: rgba(255,255,255,0.65);
+  border: 1px solid rgba(255,255,255,0.80);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+  font-family: var(--font);
+  font-weight: 500;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.grove-tile-input:focus {
+  border-color: var(--sky-mid);
+  box-shadow: 0 0 0 2px rgba(58,164,232,0.20);
+  background: rgba(255,255,255,0.90);
+}
+.grove-tile-input::placeholder { color: var(--text-muted); }
+
+.grove-tile-create {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(58,164,232,0.44);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.06) 50%, transparent 100%),
+    rgba(58,164,232,0.18);
+  color: var(--sky);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 0.15s;
+}
+.grove-tile-create:hover { filter: brightness(1.12); }
+
+/* ══════════════════════════════════════════════════════════
+   TASKBAR
+   ══════════════════════════════════════════════════════════ */
+
+.grove-taskbar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 64px;
+  z-index: var(--z-taskbar);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.40) 0%, rgba(255,255,255,0.10) 100%),
+    rgba(200,228,255,0.35);
+  backdrop-filter: blur(36px) saturate(200%);
+  -webkit-backdrop-filter: blur(36px) saturate(200%);
+  border-top: 1px solid rgba(255,255,255,0.84);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.95), 0 -3px 24px rgba(0,80,160,0.10);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+}
+
+.grove-taskbar-profile {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 160px;
+  cursor: pointer;
+}
+
+.grove-taskbar-avatar {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.88);
+  background:
+    radial-gradient(circle at 38% 30%, rgba(255,255,255,0.90) 0%, #3aa4e8 45%, #0a52a8 100%);
+  box-shadow: 0 0 0 1px rgba(0,60,160,0.15), 0 2px 8px rgba(0,80,200,0.22), inset 0 1px 0 rgba(255,255,255,0.80);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,40,120,0.50);
+  flex-shrink: 0;
+}
+
+.grove-taskbar-status {
+  position: absolute;
+  bottom: -1px; right: -1px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.90);
+  background: radial-gradient(circle at 38% 35%, rgba(255,255,255,0.9) 0%, #22c55e 40%, #15803d 100%);
+  box-shadow: 0 0 5px rgba(34,197,94,0.50);
+}
+
+.grove-taskbar-status.offline {
+  background: radial-gradient(circle at 38% 35%, rgba(255,255,255,0.6) 0%, #9ab8cc 45%, #6a8ea8 100%);
+  box-shadow: none;
+}
+
+.grove-taskbar-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+
+.grove-taskbar-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sky-deep);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.70);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grove-taskbar-tag {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+}
+
+.grove-taskbar-clock {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.grove-taskbar-time {
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--sky-deep);
+  letter-spacing: -0.5px;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.75);
+}
+
+.grove-taskbar-date {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-soft);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.60);
+}
+
+.grove-taskbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+  justify-content: flex-end;
+}
+
+.grove-taskbar-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.72);
+  border-bottom-color: rgba(160,210,245,0.50);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.44) 0%, rgba(255,255,255,0.08) 50%, rgba(200,228,255,0.18) 100%);
+  color: var(--text-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.80), 0 1px 4px rgba(0,80,160,0.10);
+  transition: filter 0.15s, box-shadow 0.15s;
+}
+.grove-taskbar-btn:hover {
+  filter: brightness(1.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.80), 0 3px 10px rgba(0,80,160,0.18);
+}
+
+.grove-taskbar-badge {
+  position: absolute;
+  top: -4px; right: -4px;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(255,255,255,0.90);
+  box-shadow: 0 1px 4px rgba(224,72,72,0.40);
+}
+
+.grove-taskbar-logout {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  height: 36px;
+  border: 1px solid rgba(255,255,255,0.72);
+  border-bottom-color: rgba(160,210,245,0.50);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.44) 0%, rgba(255,255,255,0.08) 50%, rgba(200,228,255,0.18) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.80);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.grove-taskbar-logout:hover {
+  color: var(--danger);
+  border-color: rgba(224,72,72,0.40);
+  background: rgba(255,255,255,0.55);
+}
+
+/* Online panel popup */
+.grove-online-panel {
+  position: fixed;
+  bottom: 72px;
+  left: 20px;
+  min-width: 200px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.48) 0%, rgba(255,255,255,0.12) 35%, rgba(210,232,255,0.28) 100%);
+  backdrop-filter: blur(28px) saturate(185%);
+  border: 1px solid rgba(255,255,255,0.88);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 0 0 1px rgba(0,60,160,0.10), 0 8px 32px rgba(0,80,180,0.18), inset 0 1px 0 rgba(255,255,255,0.95);
+  z-index: var(--z-taskbar);
+  animation: grove-window-open 0.22s cubic-bezier(0.22,1,0.36,1) both;
+}
+
+.grove-online-panel-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-soft);
+  margin-bottom: 8px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.65);
+}
+
+.grove-online-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.grove-online-panel-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: radial-gradient(circle at 38% 35%, rgba(255,255,255,0.9) 0%, #22c55e 42%, #15803d 100%);
+  box-shadow: 0 0 5px rgba(34,197,94,0.45);
+}
+
+.grove-online-panel-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-mid);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+}
+
+.grove-online-panel-call {
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s;
+}
+.grove-online-panel-row:hover .grove-online-panel-call {
+  opacity: 1;
+  color: var(--leaf);
+  border-color: rgba(72,170,88,0.40);
+  background: rgba(72,170,88,0.12);
+}
+
+/* ══════════════════════════════════════════════════════════
+   CHANNEL WINDOW (draggable glass)
+   ══════════════════════════════════════════════════════════ */
+
+@keyframes grove-window-open {
+  from { opacity: 0; transform: scale(0.90) translateY(12px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0px);  }
+}
+
+.grove-window {
+  position: fixed;
+  width: 520px;
+  height: 560px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.88);
+  background: rgba(215,238,255,0.20);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow:
+    0 0 0 1px rgba(0,60,160,0.14),
+    0 24px 64px rgba(0,60,180,0.22),
+    0  6px 20px rgba(0,80,200,0.14),
+    inset 0 1px 0 rgba(255,255,255,0.95);
+  animation: grove-window-open 0.28s cubic-bezier(0.22,1,0.36,1) both;
+}
+
+.grove-window-chrome {
+  flex-shrink: 0;
+  height: 40px;
+  padding: 0 10px 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.52)  0%,
+      rgba(255,255,255,0.12) 48%,
+      rgba(200,228,255,0.22) 100%
+    );
+  border-bottom: 1px solid rgba(255,255,255,0.78);
+  box-shadow: 0 1px 0 rgba(200,230,255,0.42);
+  cursor: grab;
+  user-select: none;
+}
+.grove-window-chrome:active { cursor: grabbing; }
+
+.grove-window-hash {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sky-mid);
+  flex-shrink: 0;
+}
+
+.grove-window-title {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.1px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grove-window-controls { display: flex; gap: 6px; flex-shrink: 0; }
+
+.grove-window-orb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.15);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
+  transition: filter 0.12s;
+  flex-shrink: 0;
+}
+.grove-window-orb:hover { filter: brightness(1.18); }
+
+.grove-window-close {
+  background: radial-gradient(circle at 38% 30%, rgba(255,255,255,0.65) 0%, #e05050 40%, #a03030 100%);
+}
+.grove-window-minimize {
+  background: radial-gradient(circle at 38% 30%, rgba(255,255,255,0.65) 0%, #f0c040 40%, #c08820 100%);
+}
+
+.grove-window-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ══════════════════════════════════════════════════════════
+   CALL POPUP (draggable)
+   ══════════════════════════════════════════════════════════ */
+
+@keyframes grove-popup-arrive {
+  from { opacity: 0; transform: scale(0.85) translateY(20px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0px);  }
+}
+
+.grove-call-popup {
+  position: fixed;
+  width: 248px;
+  z-index: var(--z-popup);
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.92);
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.56)  0%,
+      rgba(255,255,255,0.12) 34%,
+      rgba(210,232,255,0.32) 100%
+    );
+  backdrop-filter: blur(36px) saturate(200%);
+  -webkit-backdrop-filter: blur(36px) saturate(200%);
+  box-shadow:
+    0 0 0 1px rgba(0,60,160,0.12),
+    0 20px 56px rgba(0,60,180,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.96);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 0 18px;
+  overflow: hidden;
+  animation: grove-popup-arrive 0.35s cubic-bezier(0.22,1,0.36,1) both;
+}
+
+.grove-call-popup-chrome {
+  width: 100%;
+  height: 36px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.52) 0%, rgba(255,255,255,0.10) 100%);
+  border-bottom: 1px solid rgba(255,255,255,0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+}
+.grove-call-popup-chrome:active { cursor: grabbing; }
+
+.grove-call-popup-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.65);
+}
+
+.grove-call-popup-avatar {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.30);
+  box-shadow: 0 0 0 1px rgba(0,60,160,0.14), 0 6px 20px rgba(0,80,200,0.24), inset 0 2px 0 rgba(255,255,255,0.55);
+  margin: 18px 0 12px;
+  flex-shrink: 0;
+}
+
+.grove-call-popup-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.65);
+}
+
+.grove-call-popup-sub {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  font-style: italic;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+}
+
+.grove-call-popup-actions {
+  display: flex;
+  gap: 12px;
+  padding: 0 20px;
+  width: 100%;
+}
+
+.grove-popup-accept {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid rgba(42,136,56,0.55);
+  border-top-color: rgba(255,255,255,0.55);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.26);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.06) 50%, rgba(0,0,0,0.03) 100%),
+    linear-gradient(180deg, #5cc05c 0%, #2a8838 100%);
+  box-shadow: 0 1px 6px rgba(42,136,56,0.32), inset 0 1px 0 rgba(255,255,255,0.45);
+  transition: filter 0.15s;
+}
+.grove-popup-accept:hover { filter: brightness(1.09); }
+
+.grove-popup-decline,
+.grove-popup-hangup {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid rgba(224,72,72,0.44);
+  border-top-color: rgba(255,255,255,0.55);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--danger);
+  background: rgba(255,255,255,0.68);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.grove-popup-decline:hover,
+.grove-popup-hangup:hover {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.05) 50%, rgba(0,0,0,0.03) 100%),
+    linear-gradient(180deg, #f07070 0%, #e04848 100%);
+  color: #fff;
+  border-color: rgba(224,72,72,0.72);
+}
+
+.grove-popup-who {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-mid);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+  text-align: center;
+  padding: 0 16px;
+  width: 100%;
 }

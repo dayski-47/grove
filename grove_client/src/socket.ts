@@ -78,6 +78,12 @@ export class GroveSocket {
         this.ws.send(buffer);
     }
 
+    sendTyping(channelId: number): void {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        const buffer = packMessage(MessageType.TYPING, this.userId, channelId, "");
+        this.ws.send(buffer);
+    }
+
     sendSignaling(msg: SignalingMessage): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             console.warn("Socket not open");

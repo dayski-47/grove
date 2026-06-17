@@ -62,7 +62,7 @@ pub async fn handle_connection(
 
     presence_task.abort();
     state.remove_connection(user_id);
-    app_state.presence.mark_offline(user_id).await?;
+    let _ = app_state.presence.mark_offline(user_id).await; // don't let Redis errors skip the broadcast
     broadcast_presence(user_id, "offline", &state);
     Ok(())
 }
