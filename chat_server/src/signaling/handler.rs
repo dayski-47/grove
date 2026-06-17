@@ -1,4 +1,3 @@
-// src/signaling/handler.rs
 use crate::signaling::types::SignalingMessage;
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -28,37 +27,13 @@ impl SignalingServer {
         &self,
         msg: SignalingMessage,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        match msg {
-            SignalingMessage::CallOffer { from, to, sdp } => {
-                self.send_to_user(to, SignalingMessage::CallOffer { from, to, sdp })
-                    .await?;
-            }
-            SignalingMessage::CallAnswer { from, to, sdp } => {
-                self.send_to_user(to, SignalingMessage::CallAnswer { from, to, sdp })
-                    .await?;
-            }
-            SignalingMessage::IceCandidate {
-                from,
-                to,
-                candidate,
-            } => {
-                self.send_to_user(
-                    to,
-                    SignalingMessage::IceCandidate {
-                        from,
-                        to,
-                        candidate,
-                    },
-                )
-                .await?;
-            }
-            SignalingMessage::CallHangup { from, to } => {
-                self.send_to_user(to, SignalingMessage::CallHangup { from, to })
-                    .await?;
-            }
-        }
-
-        Ok(())
+        let to = match &msg {
+            SignalingMessage::CallOffer { to, .. } => *to,
+            SignalingMessage::CallAnswer { to, .. } => *to,
+            SignalingMessage::IceCandidate { to, .. } => *to,
+            SignalingMessage::CallHangup { to, .. } => *to,
+        };
+        self.send_to_user(to, msg).await
     }
 
     async fn send_to_user(

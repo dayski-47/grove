@@ -336,3 +336,117 @@ body {
 }
 .grove-send:hover { background: var(--moss-deep); }
 .grove-send:disabled { background: var(--bark-soft); cursor: not-allowed; }
+
+/* Online users */
+.grove-online-section {
+  margin-bottom: 8px;
+}
+
+.grove-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bark-soft);
+  padding: 8px 4px 4px;
+}
+
+.grove-online-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: var(--radius);
+}
+
+.grove-user-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--moss-soft);
+  flex-shrink: 0;
+}
+
+.grove-user-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--bark);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grove-call-btn {
+  background: none;
+  border: none;
+  color: var(--moss-soft);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.grove-call-btn:hover { background: var(--fog-deep); color: var(--moss); }
+
+/* Call UI */
+.grove-call-notification {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--fog-deep);
+}
+
+.grove-call-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 24px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--fog-deep);
+  font-size: 14px;
+}
+
+.grove-call-active {
+  background: rgba(74, 97, 80, 0.08);
+  border-color: var(--moss-soft);
+}
+
+.grove-call-who {
+  flex: 1;
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--moss-deep);
+}
+
+.grove-call-actions { display: flex; gap: 8px; }
+
+.grove-call-accept {
+  padding: 7px 16px;
+  background: var(--moss);
+  color: var(--paper);
+  border: none;
+  border-radius: var(--radius);
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.grove-call-accept:hover { background: var(--moss-deep); }
+
+.grove-call-decline,
+.grove-call-hangup {
+  padding: 7px 16px;
+  background: none;
+  color: var(--clay);
+  border: 1.5px solid var(--clay);
+  border-radius: var(--radius);
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.grove-call-decline:hover,
+.grove-call-hangup:hover { background: var(--clay); color: var(--paper); }

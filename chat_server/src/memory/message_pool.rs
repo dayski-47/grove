@@ -1,10 +1,9 @@
-// src/memory/message_pool.rs
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const POOL_SIZE: usize = 4096;
-pub const MAX_MESSAGE_SIZE: usize = 8 * 1024; // 8 KiB
+pub const MAX_MESSAGE_SIZE: usize = 8 * 1024;
 
 pub struct MessageSlot {
     data: [u8; MAX_MESSAGE_SIZE],
@@ -12,7 +11,8 @@ pub struct MessageSlot {
 }
 
 pub struct MessagePool {
-    slots: UnsafeCell<Box<[MaybeUninit<MessageSlot>; POOL_SIZE]>>, // puts data on heap because of 8MiB stack limit
+    // boxed to avoid exhausting the 8 MiB stack limit
+    slots: UnsafeCell<Box<[MaybeUninit<MessageSlot>; POOL_SIZE]>>,
     head: AtomicUsize,
     tail: AtomicUsize,
 }
@@ -36,7 +36,6 @@ impl MessagePool {
         loop {
             let head = self.head.load(Ordering::Acquire);
             let next = (head + 1) % POOL_SIZE;
-
             if next == self.tail.load(Ordering::Acquire) {
                 return None;
             }
@@ -56,7 +55,7 @@ impl MessagePool {
 
     pub fn free_old(&self, count: usize) {
         let tail = self.tail.load(Ordering::Acquire);
-        let new_tail = (tail + count) % POOL_SIZE;
-        self.tail.store(new_tail, Ordering::Release);
+        self.tail
+            .store((tail + count) % POOL_SIZE, Ordering::Release);
     }
 }

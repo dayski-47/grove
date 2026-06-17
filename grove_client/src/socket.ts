@@ -1,28 +1,36 @@
 // src/socket.ts
 import { WS_BASE } from "./config";
 import { packMessage, unpackMessage } from "./protocol";
-import { MessageType, type ParsedMessage } from "./types";
+import { MessageType, type ParsedMessage, type SignalingMessage } from "./types";
 
-type MessageHandler = (msg: ParsedMessage) => void;
-type StatusHandler  = (connected: boolean) => void;
+type MessageHandler  = (msg: ParsedMessage) => void;
+type StatusHandler   = (connected: boolean) => void;
+type PresenceHandler = (userId: number, online: boolean) => void;
+type SignalHandler   = (msg: SignalingMessage) => void;
 
 export class GroveSocket {
-    private ws:        WebSocket | null = null;
-    private token:     string;
-    private userId:    number;
-    private onMessage: MessageHandler;
-    private onStatus:  StatusHandler;
+    private ws:         WebSocket | null = null;
+    private token:      string;
+    private userId:     number;
+    private onMessage:  MessageHandler;
+    private onStatus:   StatusHandler;
+    private onPresence: PresenceHandler | null;
+    private onSignal:   SignalHandler | null;
 
     constructor(
-        token:     string,
-        userId:    number,
-        onMessage: MessageHandler,
-        onStatus:  StatusHandler
+        token:      string,
+        userId:     number,
+        onMessage:  MessageHandler,
+        onStatus:   StatusHandler,
+        onPresence: PresenceHandler | null = null,
+        onSignal:   SignalHandler   | null = null,
     ) {
-        this.token     = token;
-        this.userId    = userId;
-        this.onMessage = onMessage;
-        this.onStatus  = onStatus;
+        this.token      = token;
+        this.userId     = userId;
+        this.onMessage  = onMessage;
+        this.onStatus   = onStatus;
+        this.onPresence = onPresence;
+        this.onSignal   = onSignal;
     }
 
     connect(): void {
@@ -35,28 +43,44 @@ export class GroveSocket {
         this.ws.onerror = () => this.onStatus(false);
 
         this.ws.onmessage = (event) => {
-        if (event.data instanceof ArrayBuffer) {
-            try {
-            const msg = unpackMessage(event.data);
-            this.onMessage(msg);
-            } catch (err) {
-            console.error("Failed to parse incoming message", err);
+            if (event.data instanceof ArrayBuffer) {
+                try {
+                    const msg = unpackMessage(event.data);
+                    if (msg.msgType === MessageType.PRESENCE) {
+                        this.onPresence?.(msg.userId, msg.text === "online");
+                    } else {
+                        this.onMessage(msg);
+                    }
+                } catch (err) {
+                    console.error("Failed to parse incoming message", err);
+                }
+            } else if (typeof event.data === "string") {
+                try {
+                    const sig = JSON.parse(event.data) as SignalingMessage;
+                    this.onSignal?.(sig);
+                } catch (err) {
+                    console.error("Failed to parse signaling message", err);
+                }
             }
-        }
         };
     }
 
     sendText(channelId: number, text: string): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        console.warn("Socket not open");
-        return;
+            console.warn("Socket not open");
+            return;
         }
-        const buffer = packMessage(
-        MessageType.TEXT,
-        this.userId,
-        channelId,
-        text
-        );
+        const buffer = packMessage(MessageType.TEXT, this.userId, channelId, text);
+        this.ws.send(buffer);
+    }
+
+    sendSignaling(msg: SignalingMessage): void {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            console.warn("Socket not open");
+            return;
+        }
+        const json = JSON.stringify(msg);
+        const buffer = packMessage(MessageType.CALL_SIGNAL, this.userId, 0, json);
         this.ws.send(buffer);
     }
 

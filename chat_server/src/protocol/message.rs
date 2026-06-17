@@ -1,4 +1,3 @@
-// src/protocol/message.rs
 #![allow(dead_code)]
 #[allow(non_snake_case)]
 pub mod MessageType {
@@ -19,17 +18,15 @@ pub struct MessageHeader {
 }
 
 impl MessageHeader {
-    pub const SIZE: usize = 15; // 15 bytes in MessageHeader
+    pub const SIZE: usize = 15;
 
     pub fn from_bytes(buf: &[u8]) -> std::io::Result<Self> {
-        // static constructor
         if buf.len() < Self::SIZE {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Buffer too small",
             ));
         }
-
         Ok(Self {
             msg_type: buf[0],
             user_id: u32::from_le_bytes([buf[1], buf[2], buf[3], buf[4]]),
@@ -46,7 +43,6 @@ impl MessageHeader {
                 "Buffer too small",
             ));
         }
-
         buf[0] = self.msg_type;
         buf[1..5].copy_from_slice(&self.user_id.to_le_bytes());
         buf[5..9].copy_from_slice(&self.channel_id.to_le_bytes());
@@ -64,19 +60,16 @@ pub struct Message<'a> {
 impl<'a> Message<'a> {
     pub fn parse(buf: &'a [u8]) -> std::io::Result<Self> {
         let header = MessageHeader::from_bytes(buf)?;
-        let payload_start = MessageHeader::SIZE;
-        let payload_end = payload_start + header.text_len as usize;
-
-        if buf.len() < payload_end {
+        let end = MessageHeader::SIZE + header.text_len as usize;
+        if buf.len() < end {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Incomplete message",
             ));
         }
-
         Ok(Self {
             header,
-            payload: &buf[payload_start..payload_end],
+            payload: &buf[MessageHeader::SIZE..end],
         })
     }
 

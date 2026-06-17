@@ -1,8 +1,4 @@
-// src config.ts
-
-
 export const API_BASE = import.meta.env.DEV ? "http://localhost:8080" : "";
-export const WS_BASE = import.meta.env.DEV
+export const WS_BASE  = import.meta.env.DEV
   ? "ws://localhost:8081"
-  : `ws://${window.location.host}/ws`;
-
+  : `wss://${window.location.host}/ws`;

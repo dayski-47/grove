@@ -42,3 +42,9 @@ export interface ParsedMessage {
   timestamp: number;
   text: string;
 }
+
+export interface SignalingOffer    { type: "CallOffer";    from: number; to: number; sdp: string; }
+export interface SignalingAnswer   { type: "CallAnswer";   from: number; to: number; sdp: string; }
+export interface SignalingIce      { type: "IceCandidate"; from: number; to: number; candidate: string; }
+export interface SignalingHangup   { type: "CallHangup";   from: number; to: number; }
+export type SignalingMessage = SignalingOffer | SignalingAnswer | SignalingIce | SignalingHangup;

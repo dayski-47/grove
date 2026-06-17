@@ -1,6 +1,4 @@
-// src/api/ratelimit.rs
 use axum::http::StatusCode;
-use redis::AsyncCommands;
 
 pub async fn check_rate_limit(
     redis: &redis::Client,
@@ -13,31 +11,29 @@ pub async fn check_rate_limit(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let redis_key = format!(
-        "ratelimit:{}:{}",
-        key,
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            / window_secs
-    );
+    let bucket = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        / window_secs;
 
-    let count: u32 = con
-        .incr(&redis_key, 1)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let redis_key = format!("rl:{}:{}", key, bucket);
 
-    if count == 1 {
-        let _: () = con
-            .expire(&redis_key, window_secs as i64)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
+    // atomic INCR + conditional EXPIRE via Lua — prevents immortal keys on crash
+    let count: u32 = redis::Script::new(
+        "local n = redis.call('INCR', KEYS[1])
+         if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+         return n",
+    )
+    .key(&redis_key)
+    .arg(window_secs)
+    .invoke_async(&mut con)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if count > limit {
-        return Err(StatusCode::TOO_MANY_REQUESTS);
+        Err(StatusCode::TOO_MANY_REQUESTS)
+    } else {
+        Ok(())
     }
-
-    Ok(())
 }

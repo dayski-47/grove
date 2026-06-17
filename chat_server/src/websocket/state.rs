@@ -1,4 +1,3 @@
-// src/websocket/state.rs
 use crate::memory::message_pool::MessagePool;
 use crate::memory::user_pool::UserPool;
 use crate::signaling::handler::SignalingServer;

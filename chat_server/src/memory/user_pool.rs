@@ -1,4 +1,3 @@
-// src/memory/user_pool.rs
 #![allow(non_snake_case)]
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -86,8 +85,11 @@ impl UserPool {
     }
 
     pub fn get_name(&self, user_id: u64) -> Option<String> {
-        let users = self.users.read().unwrap();
-        users.get(&user_id).map(|u| u.name().to_owned())
+        self.users
+            .read()
+            .unwrap()
+            .get(&user_id)
+            .map(|u| u.name().to_owned())
     }
 
     pub fn set_status(&self, user_id: u64, status: u8) {

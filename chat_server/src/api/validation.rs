@@ -1,23 +1,16 @@
-// src/api/validation.rs
 use axum::http::StatusCode;
 
 pub fn validate_username(username: &str) -> Result<(), (StatusCode, String)> {
-    if username.len() < 3 {
+    if username.len() < 3 || username.len() > 32 {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Username must be at least 3 characters".to_string(),
-        ));
-    }
-    if username.len() > 32 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Username must be at most 32 characters".to_string(),
+            "Username must be 3–32 characters".to_string(),
         ));
     }
     if !username.chars().all(|c| c.is_alphanumeric() || c == '_') {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Username can only contain letters, numbers, and underscores".to_string(),
+            "Username: letters, numbers, underscores only".to_string(),
         ));
     }
     Ok(())
@@ -35,31 +28,28 @@ pub fn validate_email(email: &str) -> Result<(), (StatusCode, String)> {
 }
 
 pub fn validate_password(password: &str) -> Result<(), (StatusCode, String)> {
-    if password.len() < 8 {
+    if password.len() < 8 || password.len() > 128 {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Password must be at least 8 characters".to_string(),
+            "Password must be 8–128 characters".to_string(),
         ));
-    }
-    if password.len() > 128 {
-        return Err((StatusCode::BAD_REQUEST, "Password too long".to_string()));
     }
     if !password.chars().any(|c| c.is_numeric()) {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Password must contain at least one number".to_string(),
+            "Password must contain a number".to_string(),
         ));
     }
     if !password.chars().any(|c| c.is_alphabetic()) {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Password must contain at least one letter".to_string(),
+            "Password must contain a letter".to_string(),
         ));
     }
     if !password.chars().any(|c| !c.is_alphanumeric()) {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Password must contain at least one special character".to_string(),
+            "Password must contain a special character".to_string(),
         ));
     }
     Ok(())
@@ -79,7 +69,7 @@ pub fn validate_channel_name(name: &str) -> Result<(), (StatusCode, String)> {
     if name.is_empty() || name.len() > 100 {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Channel name must be between 1 and 100 characters".to_string(),
+            "Channel name must be 1–100 characters".to_string(),
         ));
     }
     if !name

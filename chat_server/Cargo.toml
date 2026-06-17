@@ -13,12 +13,9 @@ sqlx = { version ="0.9.0", features = ["postgres", "runtime-tokio",
 tower = "0.5.3"
 tower-http = { version = "0.7.0", features = ["cors","set-header", "limit"] }
 redis = { version = "1.2.3", features = ["tokio-comp", "connection-manager", "aio"] }
-bcrypt = "0.19.2"  # Password hashing
-jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }  # JWT auth
+bcrypt = "0.19.2"
+jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
 dotenvy = "0.15"
 tokio-tungstenite = "0.29.0"
 futures-util = "0.3.32"
 rustls = { version = "0.23", features = ["aws_lc_rs"] }
-
-[env]
-DATABASE_URL = "postgresql://user:password@localhost:5432/chat_server"

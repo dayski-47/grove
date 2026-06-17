@@ -1,7 +1,6 @@
-// src/websocket/server.rs
-
 use crate::api::AppState;
 use crate::api::auth::Claims;
+use crate::api::ratelimit::check_rate_limit;
 use crate::websocket::handler::handle_connection;
 use crate::websocket::state::ServerState;
 use jsonwebtoken::{DecodingKey, Validation, decode};
@@ -22,6 +21,14 @@ pub async fn run_websocket_server(
         let app_state = Arc::clone(&app_state);
 
         tokio::spawn(async move {
+            // 20 WS upgrades per IP per minute
+            if check_rate_limit(&app_state.redis, &format!("ws:{}", peer_addr.ip()), 20, 60)
+                .await
+                .is_err()
+            {
+                return;
+            }
+
             let user_id = Arc::new(std::sync::Mutex::new(None::<i64>));
             let user_id_clone = Arc::clone(&user_id);
             let secret = app_state.jwt_secret.clone();
@@ -30,9 +37,6 @@ pub async fn run_websocket_server(
             let ws_result = tokio_tungstenite::accept_hdr_async(
                 stream,
                 move |req: &Request, response: Response| {
-                    println!("WS handshake URI: {}", req.uri());
-                    println!("WS query: {:?}", req.uri().query());
-
                     let query = req.uri().query().unwrap_or("");
                     let token = query
                         .split('&')
@@ -71,7 +75,7 @@ pub async fn run_websocket_server(
                         }
                     }
                 }
-                Err(e) => eprintln!("WebSocket handshake failed {}: {}", peer_addr, e),
+                Err(e) => eprintln!("WS handshake failed {}: {}", peer_addr, e),
             }
         });
     }

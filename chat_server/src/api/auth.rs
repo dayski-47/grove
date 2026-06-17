@@ -1,5 +1,3 @@
-// src/api/auth.rs
-
 use crate::api::AppState;
 use crate::api::ratelimit::check_rate_limit;
 use crate::api::validation::{validate_email, validate_password, validate_username};
@@ -10,8 +8,8 @@ use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
-#[derive(Deserialize)]
 
+#[derive(Deserialize)]
 pub struct RegisterRequest {
     pub username: String,
     pub email: String,
@@ -36,6 +34,31 @@ pub struct Claims {
     pub exp: usize,
 }
 
+fn jwt_expiry() -> usize {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize
+        + 86400 // 24h
+}
+
+fn mint_token(user_id: i64, secret: &str) -> Result<String, (StatusCode, String)> {
+    encode(
+        &Header::default(),
+        &Claims {
+            sub: user_id,
+            exp: jwt_expiry(),
+        },
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Server error".to_string(),
+        )
+    })
+}
+
 pub async fn register(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
@@ -57,8 +80,7 @@ pub async fn register(
     })?;
 
     let user_id: i64 = sqlx::query_scalar(
-        "INSERT INTO users (username, email, password_hash)
-    VALUES ($1, $2, $3) RETURNING id",
+        "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(&req.username)
     .bind(req.email.trim().to_lowercase())
@@ -72,30 +94,10 @@ pub async fn register(
         )
     })?;
 
-    let expiry = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as usize
-        + 86400; // 24 hours
-
-    let claims = Claims {
-        sub: user_id,
-        exp: expiry,
-    };
-
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(state.jwt_secret.as_bytes()),
-    )
-    .map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Server error".to_string(),
-        )
-    })?;
-
-    Ok(Json(AuthResponse { token, user_id }))
+    Ok(Json(AuthResponse {
+        token: mint_token(user_id, &state.jwt_secret)?,
+        user_id,
+    }))
 }
 
 #[derive(sqlx::FromRow)]
@@ -118,7 +120,7 @@ pub async fn login(
 
     let user =
         sqlx::query_as::<_, UserRecord>("SELECT id, password_hash FROM users WHERE email = $1")
-            .bind(&req.email)
+            .bind(req.email.trim().to_lowercase())
             .fetch_one(&state.db)
             .await
             .map_err(|_| {
@@ -128,9 +130,6 @@ pub async fn login(
                 )
             })?;
 
-    println!("Attempting verify for user_id: {}", user.id);
-    println!("Password bytes len: {}", req.password.len());
-    println!("Hash: {}", &user.password_hash);
     let valid = verify(req.password.as_bytes(), &user.password_hash).map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -144,31 +143,9 @@ pub async fn login(
             "Invalid email or password".to_string(),
         ));
     }
-    let expiry = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as usize
-        + 86400; // 24 hours
-
-    let claims = Claims {
-        sub: user.id,
-        exp: expiry,
-    };
-
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(state.jwt_secret.as_bytes()),
-    )
-    .map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Server error".to_string(),
-        )
-    })?;
 
     Ok(Json(AuthResponse {
-        token,
+        token: mint_token(user.id, &state.jwt_secret)?,
         user_id: user.id,
     }))
 }

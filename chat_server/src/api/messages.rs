@@ -1,5 +1,3 @@
-// src/api/messages.rs
-
 use crate::api::validation::validate_channel_name;
 use crate::api::{AppState, AuthenticatedUser};
 use axum::{
@@ -47,6 +45,22 @@ pub struct UserProfile {
     pub username: String,
 }
 
+#[derive(Deserialize)]
+pub struct ChannelOnlineQuery {
+    pub channel_id: i64,
+}
+
+#[derive(Serialize)]
+pub struct OnlineUsersResponse {
+    pub user_ids: Vec<u64>,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct ChannelInfo {
+    pub id: i64,
+    pub name: String,
+}
+
 pub async fn get_user(
     _auth: AuthenticatedUser,
     State(state): State<Arc<AppState>>,
@@ -80,7 +94,7 @@ pub async fn create_channel(
                 )
             })?;
 
-    // Creator automatically joins the channel
+    // auto-join creator
     let mut con = state.redis.get_connection_manager().await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -123,10 +137,10 @@ pub async fn get_history(
 
     let messages = sqlx::query_as::<_, HistoricMessage>(
         "SELECT id, user_id, text, timestamp
-        FROM messages 
-        WHERE channel_id = $1 and id < $2
-        ORDER BY id DESC
-        LIMIT $3",
+         FROM messages
+         WHERE channel_id = $1 AND id < $2
+         ORDER BY id DESC
+         LIMIT $3",
     )
     .bind(params.channel_id)
     .bind(params.before.unwrap_or(i64::MAX))
@@ -167,10 +181,34 @@ pub async fn join_channel(
     Ok(StatusCode::OK)
 }
 
-#[derive(Serialize, sqlx::FromRow)]
-pub struct ChannelInfo {
-    pub id: i64,
-    pub name: String,
+pub async fn get_channel_online(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ChannelOnlineQuery>,
+) -> Result<Json<OnlineUsersResponse>, StatusCode> {
+    let mut con = state
+        .redis
+        .get_connection_manager()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let key = format!("channel:{}:members", params.channel_id);
+    let is_member: bool = con
+        .sismember(&key, auth.user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if !is_member {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let user_ids = state
+        .presence
+        .get_online_users(params.channel_id as u64)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(OnlineUsersResponse { user_ids }))
 }
 
 pub async fn list_channels(
