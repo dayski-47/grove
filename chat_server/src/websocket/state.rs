@@ -1,5 +1,5 @@
 use crate::memory::message_pool::MessagePool;
-use crate::memory::user_pool::UserPool;
+use crate::memory::user_pool::{UserPool, UserStatus};
 use crate::signaling::handler::SignalingServer;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -8,11 +8,9 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 pub type UserId = u64;
-pub type ChannelId = u64;
 
 pub struct ServerState {
     pub connections: RwLock<HashMap<UserId, mpsc::UnboundedSender<WsMessage>>>,
-    pub channels: RwLock<HashMap<ChannelId, Vec<UserId>>>,
     pub signaling: SignalingServer,
     pub user_pool: UserPool,
     pub msg_pool: Arc<MessagePool>,
@@ -22,7 +20,6 @@ impl ServerState {
     pub fn new() -> Self {
         Self {
             connections: RwLock::new(HashMap::new()),
-            channels: RwLock::new(HashMap::new()),
             signaling: SignalingServer::new(),
             user_pool: UserPool::new(),
             msg_pool: Arc::new(MessagePool::new()),
@@ -37,15 +34,7 @@ impl ServerState {
     pub fn remove_connection(&self, user_id: UserId) {
         self.signaling.unregister(user_id);
         self.connections.write().unwrap().remove(&user_id);
+        self.user_pool.set_status(user_id, UserStatus::OFFLINE);
         self.user_pool.remove(user_id);
-    }
-
-    pub fn get_channel_members(&self, channel_id: ChannelId) -> Vec<UserId> {
-        self.channels
-            .read()
-            .unwrap()
-            .get(&channel_id)
-            .cloned()
-            .unwrap_or_default()
     }
 }

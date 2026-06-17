@@ -10,15 +10,14 @@ use axum::extract::FromRequestParts;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use jsonwebtoken::{DecodingKey, Validation, decode};
-use redis::Client;
+use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use std::sync::Arc;
 
 #[derive(Clone)]
-
 pub struct AppState {
     pub db: PgPool,
-    pub redis: Client,
+    pub redis: ConnectionManager,
     pub jwt_secret: String,
     pub presence: PresenceTracker,
 }

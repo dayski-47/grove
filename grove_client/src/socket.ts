@@ -5,7 +5,7 @@ import { MessageType, type ParsedMessage, type SignalingMessage } from "./types"
 
 type MessageHandler  = (msg: ParsedMessage) => void;
 type StatusHandler   = (connected: boolean) => void;
-type PresenceHandler = (userId: number, online: boolean) => void;
+type PresenceHandler = (userId: number, online: boolean, name?: string) => void;
 type SignalHandler   = (msg: SignalingMessage) => void;
 
 export class GroveSocket {
@@ -47,7 +47,11 @@ export class GroveSocket {
                 try {
                     const msg = unpackMessage(event.data);
                     if (msg.msgType === MessageType.PRESENCE) {
-                        this.onPresence?.(msg.userId, msg.text === "online");
+                        // payload format: "status" or "status:name"
+                        const colonIdx = msg.text.indexOf(":");
+                        const status = colonIdx === -1 ? msg.text : msg.text.slice(0, colonIdx);
+                        const name   = colonIdx === -1 ? undefined : msg.text.slice(colonIdx + 1);
+                        this.onPresence?.(msg.userId, status === "online", name);
                     } else {
                         this.onMessage(msg);
                     }

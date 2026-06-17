@@ -10,15 +10,19 @@ export function useWebRTC(
 ) {
     const [callState, setCallState]       = useState<CallState>("idle");
     const [remoteUserId, setRemoteUserId] = useState<number | null>(null);
-    const pcRef        = useRef<RTCPeerConnection | null>(null);
-    const pendingOffer = useRef<{ from: number; sdp: string } | null>(null);
-    const remoteIdRef  = useRef<number | null>(null);
+    const pcRef         = useRef<RTCPeerConnection | null>(null);
+    const streamRef     = useRef<MediaStream | null>(null);
+    const pendingOffer  = useRef<{ from: number; sdp: string } | null>(null);
+    const remoteIdRef   = useRef<number | null>(null);
 
     const cleanup = useCallback(() => {
+        // Stop mic tracks so the browser releases the device indicator
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current        = null;
         pcRef.current?.close();
-        pcRef.current        = null;
-        remoteIdRef.current  = null;
-        pendingOffer.current = null;
+        pcRef.current            = null;
+        remoteIdRef.current      = null;
+        pendingOffer.current     = null;
         setCallState("idle");
         setRemoteUserId(null);
     }, []);
@@ -33,9 +37,9 @@ export function useWebRTC(
             pc.onicecandidate = (e) => {
                 if (!e.candidate || remoteIdRef.current === null) return;
                 sendSignaling({
-                    type: "IceCandidate",
-                    from: myUserId,
-                    to: remoteIdRef.current,
+                    type:      "IceCandidate",
+                    from:      myUserId,
+                    to:        remoteIdRef.current,
                     candidate: JSON.stringify(e.candidate),
                 });
             };
@@ -65,6 +69,7 @@ export function useWebRTC(
             pcRef.current = pc;
 
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            streamRef.current = stream;
             stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
             const offer = await pc.createOffer();
@@ -84,6 +89,7 @@ export function useWebRTC(
         pcRef.current = pc;
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
         await pc.setRemoteDescription({ type: "offer", sdp: pending.sdp });
@@ -133,15 +139,10 @@ export function useWebRTC(
                 break;
 
             case "CallHangup":
-                pcRef.current?.close();
-                pcRef.current        = null;
-                remoteIdRef.current  = null;
-                pendingOffer.current = null;
-                setCallState("idle");
-                setRemoteUserId(null);
+                cleanup();
                 break;
         }
-    }, []);
+    }, [cleanup]);
 
     return { callState, remoteUserId, initiateCall, acceptCall, declineCall, hangup, handleSignal };
 }

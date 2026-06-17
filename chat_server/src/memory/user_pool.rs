@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+#![allow(dead_code)]
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicU8, Ordering};

@@ -14,9 +14,9 @@ export function ChatScreen({
     userId,
     onLogout,
 }: {
-    token:     string;
-    userId:    number;
-    onLogout:  () => void;
+    token:    string;
+    userId:   number;
+    onLogout: () => void;
 }) {
     const [channelId, setChannelId]     = useState<number | null>(null);
     const [channels, setChannels]       = useState<Channel[]>([]);
@@ -27,11 +27,14 @@ export function ChatScreen({
     const socketRef                     = useRef<GroveSocket | null>(null);
     const channelIdRef                  = useRef(channelId);
 
-    useEffect(() => {
-        channelIdRef.current = channelId;
-    }, [channelId]);
+    useEffect(() => { channelIdRef.current = channelId; }, [channelId]);
 
-    function resolveUsername(uid: number) {
+    // Falls back to API fetch if name wasn't in the presence frame
+    function resolveUsername(uid: number, known?: string) {
+        if (known) {
+            setUsernames((p) => ({ ...p, [uid]: known }));
+            return;
+        }
         setUsernames((prev) => {
             if (uid in prev) return prev;
             getUser(uid, token)
@@ -42,9 +45,7 @@ export function ChatScreen({
     }
 
     const sendSignaling = useCallback(
-        (msg: SignalingMessage) => {
-            socketRef.current?.sendSignaling(msg);
-        },
+        (msg: SignalingMessage) => { socketRef.current?.sendSignaling(msg); },
         [],
     );
 
@@ -65,12 +66,13 @@ export function ChatScreen({
                 }
             },
             (isConnected) => setConnected(isConnected),
-            (presenceUserId, online) => {
+            // Presence handler now receives optional name from "status:name" frame
+            (presenceUserId, online, name) => {
                 setOnlineUsers((prev) => {
                     const next = new Set(prev);
                     if (online) {
                         next.add(presenceUserId);
-                        resolveUsername(presenceUserId);
+                        resolveUsername(presenceUserId, name);
                     } else {
                         next.delete(presenceUserId);
                     }
@@ -104,7 +106,7 @@ export function ChatScreen({
                     timestamp: m.timestamp,
                 })),
             );
-            [...new Set(history.map((m) => m.user_id))].forEach(resolveUsername);
+            [...new Set(history.map((m) => m.user_id))].forEach((uid) => resolveUsername(uid));
         }
         load().catch(console.error);
     }, [channelId, token]);
@@ -123,6 +125,8 @@ export function ChatScreen({
             console.error("Failed to create channel");
         }
     }
+
+    const currentChannel = channels.find((c) => c.id === channelId) ?? null;
 
     return (
         <div className="grove-chat">
@@ -147,6 +151,13 @@ export function ChatScreen({
                     onDecline={declineCall}
                     onHangup={hangup}
                 />
+                {/* Channel header bar */}
+                <div className="grove-channel-header">
+                    <span className="grove-ch-hash" aria-hidden="true">#</span>
+                    <span className="grove-ch-name">
+                        {currentChannel?.name ?? "—"}
+                    </span>
+                </div>
                 <MessageList
                     messages={messages}
                     currentUserId={userId}

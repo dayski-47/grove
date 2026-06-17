@@ -5,7 +5,7 @@ export function MessageInput({
     onSend,
     disabled,
 }: {
-    onSend: (text: string) => void;
+    onSend:   (text: string) => void;
     disabled: boolean;
 }) {
     const [text, setText] = useState("");
@@ -19,19 +19,26 @@ export function MessageInput({
 
     return (
         <div className="grove-input-bar">
-        <input
-            className="grove-message-field"
-            placeholder={disabled ? "connecting…" : "say something…"}
-            value={text}
-            disabled={disabled}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-            if (e.key === "Enter") submit();
-            }}
-        />
-        <button className="grove-send" onClick={submit} disabled={disabled}>
-            send
-        </button>
+            {/* Glass capsule inner wrapper — focus-within drives the ring */}
+            <div className="grove-input-bar-inner">
+                <input
+                    className="grove-message-field"
+                    placeholder={disabled ? "connecting…" : "say something…"}
+                    value={text}
+                    disabled={disabled}
+                    aria-label="Message input"
+                    onChange={(e) => setText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+                />
+                <button
+                    className="grove-send"
+                    onClick={submit}
+                    disabled={disabled}
+                    aria-label="Send message"
+                >
+                    Send
+                </button>
+            </div>
         </div>
     );
 }

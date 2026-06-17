@@ -1,15 +1,13 @@
 use axum::http::StatusCode;
+use redis::aio::ConnectionManager;
 
 pub async fn check_rate_limit(
-    redis: &redis::Client,
+    redis: &ConnectionManager,
     key: &str,
     limit: u32,
     window_secs: u64,
 ) -> Result<(), StatusCode> {
-    let mut con = redis
-        .get_connection_manager()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut con = redis.clone();
 
     let bucket = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -19,7 +17,7 @@ pub async fn check_rate_limit(
 
     let redis_key = format!("rl:{}:{}", key, bucket);
 
-    // atomic INCR + conditional EXPIRE via Lua — prevents immortal keys on crash
+    // Atomic INCR + conditional EXPIRE via Lua — prevents immortal keys on crash.
     let count: u32 = redis::Script::new(
         "local n = redis.call('INCR', KEYS[1])
          if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end

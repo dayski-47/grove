@@ -6,7 +6,11 @@ mod protocol;
 mod signaling;
 mod websocket;
 
+use mimalloc::MiMalloc;
 use std::sync::Arc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,12 +22,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
 
     let db_pool = database::connect_db(&database_url).await?;
-    let redis_client = cache::connect_redis(&redis_url).await?;
-    let presence = cache::presence::PresenceTracker::new(redis_client.clone());
+    // Single ConnectionManager shared across all subsystems — each clone is an Arc bump.
+    let redis_conn = cache::connect_redis(&redis_url).await?;
+    let presence = cache::presence::PresenceTracker::new(redis_conn.clone());
 
     let app_state = api::AppState {
         db: db_pool,
-        redis: redis_client,
+        redis: redis_conn,
         jwt_secret,
         presence,
     };

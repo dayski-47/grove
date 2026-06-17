@@ -71,7 +71,6 @@ pub async fn get_user(
         .fetch_one(&state.db)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-
     Ok(Json(user))
 }
 
@@ -94,13 +93,7 @@ pub async fn create_channel(
                 )
             })?;
 
-    // auto-join creator
-    let mut con = state.redis.get_connection_manager().await.map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Server error".to_string(),
-        )
-    })?;
+    let mut con = state.redis.clone();
     let key = format!("channel:{}:members", channel_id);
     let _: () = con.sadd(&key, auth.user_id).await.map_err(|_| {
         (
@@ -117,24 +110,17 @@ pub async fn get_history(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HistoryQuery>,
 ) -> Result<Json<Vec<HistoricMessage>>, StatusCode> {
-    let mut con = state
-        .redis
-        .get_connection_manager()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
+    let mut con = state.redis.clone();
     let key = format!("channel:{}:members", params.channel_id);
     let is_member: bool = con
         .sismember(&key, auth.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
     if !is_member {
         return Err(StatusCode::FORBIDDEN);
     }
 
     let limit = params.limit.unwrap_or(50).min(100);
-
     let messages = sqlx::query_as::<_, HistoricMessage>(
         "SELECT id, user_id, text, timestamp
          FROM messages
@@ -167,11 +153,7 @@ pub async fn join_channel(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let mut con = state
-        .redis
-        .get_connection_manager()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut con = state.redis.clone();
     let key = format!("channel:{}:members", req.channel_id);
     let _: () = con
         .sadd(&key, auth.user_id)
@@ -186,18 +168,12 @@ pub async fn get_channel_online(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ChannelOnlineQuery>,
 ) -> Result<Json<OnlineUsersResponse>, StatusCode> {
-    let mut con = state
-        .redis
-        .get_connection_manager()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
+    let mut con = state.redis.clone();
     let key = format!("channel:{}:members", params.channel_id);
     let is_member: bool = con
         .sismember(&key, auth.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
     if !is_member {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -220,6 +196,5 @@ pub async fn list_channels(
             .fetch_all(&state.db)
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
     Ok(Json(channels))
 }

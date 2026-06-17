@@ -1,12 +1,14 @@
 use crate::api::AppState;
 use crate::api::validation::validate_message_text;
 use crate::memory::message_pool::MAX_MESSAGE_SIZE;
-use crate::memory::user_pool::User;
+use crate::memory::user_pool::{User, UserFlags};
 use crate::protocol::message::{Message, MessageHeader, MessageType};
 use crate::signaling::types::SignalingMessage;
 use crate::websocket::state::ServerState;
+use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use redis::AsyncCommands;
+use redis::aio::ConnectionManager;
 use std::sync::Arc;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
@@ -72,7 +74,7 @@ fn now_unix() -> u32 {
         .as_secs() as u32
 }
 
-// rewrite user_id (bytes 1-4) and timestamp (bytes 9-12) to prevent spoofing
+// Rewrites user_id (bytes 1-4) and timestamp (bytes 9-12) to prevent spoofing.
 fn sanitize_frame(data: &[u8], user_id: u64, timestamp: u32) -> Vec<u8> {
     let mut frame = data.to_vec();
     if frame.len() >= MessageHeader::SIZE {
@@ -82,8 +84,13 @@ fn sanitize_frame(data: &[u8], user_id: u64, timestamp: u32) -> Vec<u8> {
     frame
 }
 
-fn make_presence_frame(user_id: u64, status: &str) -> Option<WsMessage> {
-    let text_bytes = status.as_bytes();
+// Payload format: "status" or "status:name" — clients learn usernames from presence frames.
+fn make_presence_frame(user_id: u64, status: &str, name: Option<&str>) -> Option<WsMessage> {
+    let payload = match name {
+        Some(n) if !n.is_empty() => format!("{}:{}", status, n),
+        _ => status.to_string(),
+    };
+    let text_bytes = payload.as_bytes();
     let mut buf = vec![0u8; MessageHeader::SIZE + text_bytes.len()];
     let header = MessageHeader {
         msg_type: MessageType::PRESENCE,
@@ -98,7 +105,8 @@ fn make_presence_frame(user_id: u64, status: &str) -> Option<WsMessage> {
 }
 
 fn broadcast_presence(user_id: u64, status: &str, state: &ServerState) {
-    let Some(frame) = make_presence_frame(user_id, status) else {
+    let name = state.user_pool.get_name(user_id);
+    let Some(frame) = make_presence_frame(user_id, status, name.as_deref()) else {
         return;
     };
     let connections = state.connections.read().unwrap();
@@ -116,7 +124,8 @@ fn send_online_roster(new_user_id: u64, state: &ServerState) {
         if other_id == new_user_id {
             continue;
         }
-        if let Some(frame) = make_presence_frame(other_id, "online") {
+        let name = state.user_pool.get_name(other_id);
+        if let Some(frame) = make_presence_frame(other_id, "online", name.as_deref()) {
             let _ = new_tx.send(frame);
         }
     }
@@ -173,7 +182,15 @@ pub async fn handle_binary_message(
 
         MessageType::CALL_SIGNAL => {
             if let Ok(sig_msg) = serde_json::from_str::<SignalingMessage>(&text) {
-                // enforce from == authenticated user; ignore client-supplied from field
+                match &sig_msg {
+                    SignalingMessage::CallOffer { .. } | SignalingMessage::CallAnswer { .. } => {
+                        state.user_pool.set_flag(user_id, UserFlags::IN_CALL);
+                    }
+                    SignalingMessage::CallHangup { .. } => {
+                        state.user_pool.clear_flag(user_id, UserFlags::IN_CALL);
+                    }
+                    _ => {}
+                }
                 state
                     .signaling
                     .handle_message(sig_msg.with_from(user_id))
@@ -187,21 +204,23 @@ pub async fn handle_binary_message(
     Ok(())
 }
 
+// One ConnectionManager clone per call (Arc bump) instead of opening a new socket.
+// Bytes::clone() is also O(1) — no copy per recipient.
 async fn broadcast_to_channel(
     data: &[u8],
     channel_id: u64,
     state: &ServerState,
-    redis: &redis::Client,
+    redis: &ConnectionManager,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut con = redis.get_connection_manager().await?;
+    let mut con = redis.clone();
     let key = format!("channel:{}:members", channel_id);
     let member_ids: Vec<i64> = con.smembers(&key).await?;
 
-    let shared = Arc::new(data.to_vec());
+    let shared = Bytes::copy_from_slice(data);
     let connections = state.connections.read().unwrap();
     for member_id in member_ids {
         if let Some(tx) = connections.get(&(member_id as u64)) {
-            let _ = tx.send(WsMessage::Binary((*shared).clone().into()));
+            let _ = tx.send(WsMessage::Binary(shared.clone()));
         }
     }
     Ok(())
