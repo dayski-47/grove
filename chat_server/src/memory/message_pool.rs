@@ -1,11 +1,10 @@
 // src/memory/message_pool.rs
-#![allow(dead_code)]
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const POOL_SIZE: usize = 4096;
-const MAX_MESSAGE_SIZE: usize = 8 * 1024; // 8 KiB
+pub const MAX_MESSAGE_SIZE: usize = 8 * 1024; // 8 KiB
 
 pub struct MessageSlot {
     data: [u8; MAX_MESSAGE_SIZE],
@@ -31,6 +30,9 @@ impl MessagePool {
 
     #[allow(clippy::mut_from_ref)]
     pub fn alloc(&self, size: usize) -> Option<&mut [u8]> {
+        if size > MAX_MESSAGE_SIZE {
+            return None;
+        }
         loop {
             let head = self.head.load(Ordering::Acquire);
             let next = (head + 1) % POOL_SIZE;

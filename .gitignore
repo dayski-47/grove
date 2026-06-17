@@ -7,7 +7,7 @@ chat_server/.env
 grove_client/node_modules/
 grove_client/dist/
 
-# Environment — NEVER commit these
+# Environment 
 .env
 *.env
 .env.local
@@ -19,3 +19,4 @@ grove_client/dist/
 # IDE
 .vscode/
 .idea/
+

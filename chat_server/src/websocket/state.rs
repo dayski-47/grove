@@ -1,6 +1,9 @@
 // src/websocket/state.rs
-#![allow(dead_code)]
+use crate::memory::message_pool::MessagePool;
+use crate::memory::user_pool::UserPool;
+use crate::signaling::handler::SignalingServer;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::RwLock;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
@@ -11,6 +14,9 @@ pub type ChannelId = u64;
 pub struct ServerState {
     pub connections: RwLock<HashMap<UserId, mpsc::UnboundedSender<WsMessage>>>,
     pub channels: RwLock<HashMap<ChannelId, Vec<UserId>>>,
+    pub signaling: SignalingServer,
+    pub user_pool: UserPool,
+    pub msg_pool: Arc<MessagePool>,
 }
 
 impl ServerState {
@@ -18,11 +24,21 @@ impl ServerState {
         Self {
             connections: RwLock::new(HashMap::new()),
             channels: RwLock::new(HashMap::new()),
+            signaling: SignalingServer::new(),
+            user_pool: UserPool::new(),
+            msg_pool: Arc::new(MessagePool::new()),
         }
     }
 
     pub fn add_connection(&self, user_id: UserId, tx: mpsc::UnboundedSender<WsMessage>) {
+        self.signaling.register(user_id, tx.clone());
         self.connections.write().unwrap().insert(user_id, tx);
+    }
+
+    pub fn remove_connection(&self, user_id: UserId) {
+        self.signaling.unregister(user_id);
+        self.connections.write().unwrap().remove(&user_id);
+        self.user_pool.remove(user_id);
     }
 
     pub fn get_channel_members(&self, channel_id: ChannelId) -> Vec<UserId> {

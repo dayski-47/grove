@@ -1,6 +1,8 @@
 // src/memory/user_pool.rs
-#![allow(dead_code, non_snake_case)]
-use std::sync::atomic::AtomicU8;
+#![allow(non_snake_case)]
+use std::collections::HashMap;
+use std::sync::RwLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 #[repr(transparent)]
 pub struct UserFlags(pub u8);
@@ -36,10 +38,76 @@ pub mod UserStatus {
 
 #[repr(C, align(64))]
 pub struct User {
-    id: u64,
+    pub id: u64,
     name: [u8; 32],
     name_len: u8,
-    status: AtomicU8,
-    flags: UserFlags,
+    pub status: AtomicU8,
+    pub flags: UserFlags,
     _padding: [u8; 21],
+}
+
+impl User {
+    pub fn new(id: u64, username: &str) -> Self {
+        let mut name = [0u8; 32];
+        let len = username.len().min(32);
+        name[..len].copy_from_slice(&username.as_bytes()[..len]);
+        Self {
+            id,
+            name,
+            name_len: len as u8,
+            status: AtomicU8::new(UserStatus::ONLINE),
+            flags: UserFlags(0),
+            _padding: [0u8; 21],
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        std::str::from_utf8(&self.name[..self.name_len as usize]).unwrap_or("")
+    }
+}
+
+pub struct UserPool {
+    users: RwLock<HashMap<u64, User>>,
+}
+
+impl UserPool {
+    pub fn new() -> Self {
+        Self {
+            users: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub fn insert(&self, user: User) {
+        self.users.write().unwrap().insert(user.id, user);
+    }
+
+    pub fn remove(&self, user_id: u64) {
+        self.users.write().unwrap().remove(&user_id);
+    }
+
+    pub fn get_name(&self, user_id: u64) -> Option<String> {
+        let users = self.users.read().unwrap();
+        users.get(&user_id).map(|u| u.name().to_owned())
+    }
+
+    pub fn set_status(&self, user_id: u64, status: u8) {
+        let users = self.users.read().unwrap();
+        if let Some(user) = users.get(&user_id) {
+            user.status.store(status, Ordering::Relaxed);
+        }
+    }
+
+    pub fn set_flag(&self, user_id: u64, flag: u8) {
+        let mut users = self.users.write().unwrap();
+        if let Some(user) = users.get_mut(&user_id) {
+            user.flags.0 |= flag;
+        }
+    }
+
+    pub fn clear_flag(&self, user_id: u64, flag: u8) {
+        let mut users = self.users.write().unwrap();
+        if let Some(user) = users.get_mut(&user_id) {
+            user.flags.0 &= !flag;
+        }
+    }
 }
