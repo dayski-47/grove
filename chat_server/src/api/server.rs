@@ -1,7 +1,7 @@
 // src/api/server.rs
 
 use super::auth::{login, register};
-use super::messages::{get_history, join_channel, create_channel, get_user, list_channels};
+use super::messages::{create_channel, get_history, get_user, join_channel, list_channels};
 use crate::api::AppState;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::{

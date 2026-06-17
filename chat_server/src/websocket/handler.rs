@@ -9,7 +9,6 @@ use redis::AsyncCommands;
 use std::sync::Arc;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
-
 pub async fn handle_connection(
     ws_stream: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
     state: Arc<ServerState>,

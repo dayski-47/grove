@@ -11,7 +11,7 @@ impl PresenceTracker {
     pub fn new(client: Client) -> Self {
         Self { client }
     }
-    
+
     pub async fn mark_offline(&self, user_id: u64) -> Result<(), redis::RedisError> {
         let mut con = self.client.get_connection_manager().await?;
         let key = format!("presence:{}", user_id);

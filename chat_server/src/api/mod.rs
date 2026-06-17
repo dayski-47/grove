@@ -7,6 +7,7 @@ pub mod server;
 pub mod validation;
 
 use crate::api::auth::Claims;
+use crate::cache::presence::PresenceTracker;
 use axum::extract::FromRequestParts;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
@@ -14,7 +15,6 @@ use jsonwebtoken::{DecodingKey, Validation, decode};
 use redis::Client;
 use sqlx::PgPool;
 use std::sync::Arc;
-use crate::cache::presence::PresenceTracker;
 
 #[derive(Clone)]
 
