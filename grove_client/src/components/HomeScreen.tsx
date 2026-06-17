@@ -2,17 +2,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GroveSocket } from "../socket";
 import {
-    getHistory, joinChannel, createChannel, getUser, listChannels,
-    openDm, listDms, listFriends, addFriend,
+    getHistory, joinChannel, createChannel, listChannels,
+    openDm, listDms, listFriends, addFriend, getChannelReactions, logout,
+    updateAbout, getUserProfile,
 } from "../api";
-import { MessageType, type ParsedMessage, type SignalingMessage, type DmInfo, type FriendInfo } from "../types";
+import {
+    MessageType, type ParsedMessage, type SignalingMessage,
+    type DmInfo, type FriendInfo, type ReactionUpdate, type EditUpdate,
+    type DeleteUpdate, type UserProfile,
+} from "../types";
 import type { DisplayMessage } from "./MessageList";
 import { ChannelWindow } from "./ChannelWindow";
 import { ChannelListWindow } from "./ChannelListWindow";
 import { FriendsWindow } from "./FriendsWindow";
+import { DmsWindow } from "./DmsWindow";
 import { TaskBar } from "./TaskBar";
 import { CallPopup } from "./CallPopup";
+import { UserPopover } from "./UserPopover";
+import { ProfileMenu, type ActivityStatus } from "./ProfileMenu";
 import { useWebRTC } from "../useWebRTC";
+import { packMessage } from "../protocol";
 
 const APP_TILE_COLORS: Record<string, string> = {
     channels: "linear-gradient(135deg, #1a7fd4 0%, #0a52a8 100%)",
@@ -30,8 +39,17 @@ interface WindowState {
     displayName: string;
     partnerId?:  number;
 }
-type AppKind = "channels" | "friends";
+type AppKind = "channels" | "friends" | "dms";
 interface AppWindowState { kind: AppKind; x: number; y: number; zIndex: number; }
+
+type EmojiMap     = Record<string, { count: number; byMe: boolean }>;
+type ReactionsMap = Record<number, EmojiMap>;
+
+interface PopoverState {
+    userId: number;
+    x:      number;
+    y:      number;
+}
 
 export function HomeScreen({
     token,
@@ -48,23 +66,49 @@ export function HomeScreen({
     const [messages, setMessages]       = useState<Record<number, DisplayMessage[]>>({});
     const [connected, setConnected]     = useState(false);
     const [usernames, setUsernames]     = useState<Record<number, string>>({});
+    const [profiles, setProfiles]       = useState<Record<number, UserProfile>>({});
     const [onlineUsers, setOnlineUsers] = useState<Set<number>>(new Set());
     const [typingUsers, setTypingUsers] = useState<Record<number, Map<number, number>>>({});
     const [windows, setWindows]         = useState<WindowState[]>([]);
     const [appWindows, setAppWindows]   = useState<AppWindowState[]>([]);
+    const [reactions, setReactions]     = useState<Record<number, ReactionsMap>>({});
+    const [popover, setPopover]         = useState<PopoverState | null>(null);
+    const [myAbout, setMyAbout]         = useState(() => localStorage.getItem("grove_about") ?? "");
+    const [myStatus, setMyStatus]       = useState<ActivityStatus>(
+        () => (localStorage.getItem("grove_status") as ActivityStatus) ?? "online",
+    );
 
-    const socketRef = useRef<GroveSocket | null>(null);
-    const loadedRef = useRef<Set<number>>(new Set());
-    const zRef      = useRef(100);
+    const socketRef   = useRef<GroveSocket | null>(null);
+    const loadedRef   = useRef<Set<number>>(new Set());
+    const zRef        = useRef(100);
+    const oldestIdRef = useRef<Record<number, number>>({});
+    const [hasMore,     setHasMore]     = useState<Record<number, boolean>>({});
+    const [loadingMore, setLoadingMore] = useState<Set<number>>(new Set());
 
     const resolveUsername = useCallback((uid: number, known?: string) => {
         if (known) { setUsernames(p => ({ ...p, [uid]: known })); return; }
         setUsernames(prev => {
             if (uid in prev) return prev;
-            getUser(uid, token)
-                .then(p  => setUsernames(u => ({ ...u, [uid]: p.username })))
+            getUserProfile(uid, token)
+                .then(p => {
+                    setUsernames(u => ({ ...u, [uid]: p.username }));
+                    setProfiles(pr => ({ ...pr, [uid]: p }));
+                })
                 .catch(() => setUsernames(u => ({ ...u, [uid]: `user ${uid}` })));
             return { ...prev, [uid]: `user ${uid}` };
+        });
+    }, [token]);
+
+    const resolveProfile = useCallback((uid: number) => {
+        setProfiles(prev => {
+            if (uid in prev) return prev;
+            getUserProfile(uid, token)
+                .then(p => {
+                    setProfiles(pr => ({ ...pr, [uid]: p }));
+                    setUsernames(u => ({ ...u, [uid]: p.username }));
+                })
+                .catch(() => {});
+            return prev;
         });
     }, [token]);
 
@@ -76,7 +120,6 @@ export function HomeScreen({
     const { callState, remoteUserId, initiateCall, acceptCall, declineCall, hangup, handleSignal } =
         useWebRTC(userId, sendSignaling);
 
-    // Expire typing indicators
     useEffect(() => {
         const timer = setInterval(() => {
             const now = Date.now();
@@ -112,17 +155,76 @@ export function HomeScreen({
                     }
                     return;
                 }
-                setMessages(prev => {
-                    const arr = prev[msg.channelId] ?? [];
-                    return {
-                        ...prev,
-                        [msg.channelId]: [
-                            ...arr,
-                            { userId: msg.userId, text: msg.text, timestamp: msg.timestamp },
-                        ],
-                    };
-                });
-                resolveUsername(msg.userId);
+
+                if (msg.msgType === MessageType.REACTION) {
+                    const update = JSON.parse(msg.text) as ReactionUpdate;
+                    setReactions(prev => {
+                        const chMap  = { ...(prev[msg.channelId] ?? {}) };
+                        const msgMap = { ...(chMap[update.message_id] ?? {}) };
+                        if (update.count <= 0) {
+                            delete msgMap[update.emoji];
+                        } else {
+                            const wasByMe = msgMap[update.emoji]?.byMe ?? false;
+                            msgMap[update.emoji] = {
+                                count: update.count,
+                                byMe:  update.action === "add"
+                                    ? (update.user_id === userId ? true  : wasByMe)
+                                    : (update.action === "remove" && update.user_id === userId ? false : wasByMe),
+                            };
+                        }
+                        chMap[update.message_id] = msgMap;
+                        return { ...prev, [msg.channelId]: chMap };
+                    });
+                    return;
+                }
+
+                if (msg.msgType === MessageType.EDIT) {
+                    const update = JSON.parse(msg.text) as EditUpdate;
+                    setMessages(prev => {
+                        const arr = prev[msg.channelId];
+                        if (!arr) return prev;
+                        return {
+                            ...prev,
+                            [msg.channelId]: arr.map(m =>
+                                m.id === update.message_id
+                                    ? { ...m, text: update.text, edited: true }
+                                    : m,
+                            ),
+                        };
+                    });
+                    return;
+                }
+
+                if (msg.msgType === MessageType.DELETE) {
+                    const update = JSON.parse(msg.text) as DeleteUpdate;
+                    setMessages(prev => {
+                        const arr = prev[msg.channelId];
+                        if (!arr) return prev;
+                        return {
+                            ...prev,
+                            [msg.channelId]: arr.map(m =>
+                                m.id === update.message_id
+                                    ? { ...m, text: "", deleted: true }
+                                    : m,
+                            ),
+                        };
+                    });
+                    return;
+                }
+
+                if (msg.msgType === MessageType.TEXT) {
+                    setMessages(prev => {
+                        const arr = prev[msg.channelId] ?? [];
+                        return {
+                            ...prev,
+                            [msg.channelId]: [
+                                ...arr,
+                                { id: msg.msgId, userId: msg.userId, text: msg.text, timestamp: msg.timestamp },
+                            ],
+                        };
+                    });
+                    resolveUsername(msg.userId);
+                }
             },
             (isConn) => setConnected(isConn),
             (presenceUserId, online, name) => {
@@ -132,7 +234,6 @@ export function HomeScreen({
                     else        next.delete(presenceUserId);
                     return next;
                 });
-                // Refresh friend online status when presence changes
                 setFriends(prev => prev.map(f =>
                     f.user_id === presenceUserId ? { ...f, online } : f,
                 ));
@@ -145,9 +246,33 @@ export function HomeScreen({
         listChannels(token).then(chs => setChannels(chs.map(c => ({ id: c.id, name: c.name })))).catch(console.error);
         listDms(token).then(list => { setDms(list); list.forEach(d => resolveUsername(d.partner_id, d.partner_name)); }).catch(console.error);
         listFriends(token).then(setFriends).catch(console.error);
+        resolveProfile(userId);
 
         return () => socket.disconnect();
-    }, [token, userId, handleSignal, resolveUsername]);
+    }, [token, userId, handleSignal, resolveUsername, resolveProfile]);
+
+    // Broadcast status changes to other users
+    function handleStatusChange(status: ActivityStatus) {
+        setMyStatus(status);
+        localStorage.setItem("grove_status", status);
+        // Send a PRESENCE frame from the client to update others
+        if (socketRef.current) {
+            const ws = (socketRef.current as unknown as { ws: WebSocket | null }).ws;
+            if (ws?.readyState === WebSocket.OPEN) {
+                ws.send(packMessage(MessageType.PRESENCE, userId, 0, status));
+            }
+        }
+    }
+
+    async function handleAboutSave(text: string) {
+        setMyAbout(text);
+        localStorage.setItem("grove_about", text);
+        setProfiles(prev => {
+            if (!prev[userId]) return prev;
+            return { ...prev, [userId]: { ...prev[userId], about: text } };
+        });
+        await updateAbout(text, token).catch(() => {});
+    }
 
     function bumpZ(): number {
         zRef.current++;
@@ -165,21 +290,83 @@ export function HomeScreen({
             loadedRef.current.add(channelId);
             try {
                 if (kind === "channel") await joinChannel(channelId, token);
-                const history = await getHistory(channelId, token);
+                const [history, rxData] = await Promise.all([
+                    getHistory(channelId, token),
+                    getChannelReactions(channelId, token),
+                ]);
                 setMessages(prev => ({
                     ...prev,
                     [channelId]: history.slice().reverse().map(m => ({
-                        userId: m.user_id, text: m.text, timestamp: m.timestamp,
+                        id:        m.id,
+                        userId:    m.user_id,
+                        text:      m.text,
+                        timestamp: m.timestamp,
+                        edited:    m.edited,
+                        deleted:   m.deleted,
                     })),
                 }));
+                if (history.length > 0) {
+                    oldestIdRef.current[channelId] = history[history.length - 1].id;
+                }
+                setHasMore(prev => ({ ...prev, [channelId]: history.length >= 50 }));
+                if (rxData.length > 0) {
+                    const rxMap: ReactionsMap = {};
+                    for (const r of rxData) {
+                        if (!rxMap[r.message_id]) rxMap[r.message_id] = {};
+                        rxMap[r.message_id][r.emoji] = { count: r.count, byMe: r.by_me };
+                    }
+                    setReactions(prev => ({ ...prev, [channelId]: rxMap }));
+                }
                 [...new Set(history.map(m => m.user_id))].forEach(uid => resolveUsername(uid));
-            } catch { /* already member */ }
+            } catch { /* already member or join failed */ }
         }
         const offset = (windows.length % 8) * 28;
         setWindows(prev => [...prev, {
             channelId, x: 60 + offset, y: 40 + offset, zIndex: bumpZ(),
             kind, displayName, partnerId,
         }]);
+    }
+
+    async function handleJoinById(channelId: number) {
+        // Try to open — if user isn't a member, joinChannel will add them
+        const existing = channels.find(c => c.id === channelId);
+        const name = existing?.name ?? `channel ${channelId}`;
+        openChannel(channelId, name, "channel");
+        if (!existing) {
+            // Refresh channel list after join
+            listChannels(token).then(chs => setChannels(chs.map(c => ({ id: c.id, name: c.name })))).catch(console.error);
+        }
+    }
+
+    async function loadMoreMessages(channelId: number) {
+        const before = oldestIdRef.current[channelId];
+        if (!before) return;
+        setLoadingMore(prev => new Set(prev).add(channelId));
+        try {
+            const older = await getHistory(channelId, token, before);
+            if (older.length === 0) {
+                setHasMore(prev => ({ ...prev, [channelId]: false }));
+                return;
+            }
+            const prepend = older.slice().reverse().map(m => ({
+                id:        m.id,
+                userId:    m.user_id,
+                text:      m.text,
+                timestamp: m.timestamp,
+                edited:    m.edited,
+                deleted:   m.deleted,
+            }));
+            oldestIdRef.current[channelId] = older[older.length - 1].id;
+            if (older.length < 50) setHasMore(prev => ({ ...prev, [channelId]: false }));
+            setMessages(prev => ({
+                ...prev,
+                [channelId]: [...prepend, ...(prev[channelId] ?? [])],
+            }));
+            [...new Set(older.map(m => m.user_id))].forEach(uid => resolveUsername(uid));
+        } catch { console.error("load more failed"); }
+        finally {
+            setLoadingMore(prev => { const s = new Set(prev); s.delete(channelId); return s; });
+        }
     }
 
     async function openDmWith(partnerId: number) {
@@ -222,11 +409,22 @@ export function HomeScreen({
         } catch { console.error("Failed to add friend"); }
     }
 
+    async function handleLogout() {
+        await logout(token).catch(() => {});
+        onLogout();
+    }
+
+    function handleUserHover(hoveredUserId: number, event: React.MouseEvent) {
+        const rect = (event.target as HTMLElement).getBoundingClientRect();
+        setPopover({ userId: hoveredUserId, x: rect.left, y: rect.bottom + 6 });
+        resolveProfile(hoveredUserId);
+    }
+
     const myName = usernames[userId] ?? `user ${userId}`;
+    const myProfile = profiles[userId];
 
     return (
-        <div className="grove-home">
-            {/* 3 main app tiles */}
+        <div className="grove-home" onClick={() => setPopover(null)}>
             <div className="grove-app-tiles" role="main">
                 {(["channels", "friends", "dms"] as const).map((kind, i) => {
                     const labels: Record<string, string> = {
@@ -234,8 +432,7 @@ export function HomeScreen({
                         friends:  "Friends",
                         dms:      "Messages",
                     };
-                    const isOpen = appWindows.some(w => w.kind === kind) ||
-                        (kind === "dms" && dms.some(d => windows.some(w => w.channelId === d.channel_id)));
+                    const isOpen = appWindows.some(w => w.kind === kind);
                     return (
                         <div
                             key={kind}
@@ -244,7 +441,7 @@ export function HomeScreen({
                         >
                             <button
                                 className={`grove-app-tile${isOpen ? " grove-tile-open" : ""}`}
-                                onClick={() => kind === "dms" ? openAppWindow("channels") : openAppWindow(kind)}
+                                onClick={() => openAppWindow(kind)}
                                 aria-label={labels[kind]}
                                 aria-pressed={isOpen}
                             >
@@ -258,7 +455,6 @@ export function HomeScreen({
                 })}
             </div>
 
-            {/* App list windows */}
             {appWindows.map(aw => {
                 if (aw.kind === "channels") return (
                     <ChannelListWindow
@@ -271,12 +467,14 @@ export function HomeScreen({
                         onFocus={() => { const z = bumpZ(); setAppWindows(prev => prev.map(w => w.kind === "channels" ? { ...w, zIndex: z } : w)); }}
                         onDrag={(x, y) => setAppWindows(prev => prev.map(w => w.kind === "channels" ? { ...w, x, y } : w))}
                         onCreateChannel={handleCreateChannel}
+                        onJoinById={handleJoinById}
                     />
                 );
                 if (aw.kind === "friends") return (
                     <FriendsWindow
                         key="friends"
                         friends={friends}
+                        token={token}
                         x={aw.x} y={aw.y} zIndex={aw.zIndex}
                         onClose={() => setAppWindows(prev => prev.filter(w => w.kind !== "friends"))}
                         onFocus={() => { const z = bumpZ(); setAppWindows(prev => prev.map(w => w.kind === "friends" ? { ...w, zIndex: z } : w)); }}
@@ -286,13 +484,26 @@ export function HomeScreen({
                         onAddFriend={handleAddFriend}
                     />
                 );
+                if (aw.kind === "dms") return (
+                    <DmsWindow
+                        key="dms"
+                        dms={dms}
+                        onlineUsers={onlineUsers}
+                        openChannelIds={new Set(windows.filter(w => w.kind === "dm").map(w => w.channelId))}
+                        x={aw.x} y={aw.y} zIndex={aw.zIndex}
+                        onOpen={(cid, name, pid) => openChannel(cid, name, "dm", pid)}
+                        onClose={() => setAppWindows(prev => prev.filter(w => w.kind !== "dms"))}
+                        onFocus={() => { const z = bumpZ(); setAppWindows(prev => prev.map(w => w.kind === "dms" ? { ...w, zIndex: z } : w)); }}
+                        onDrag={(x, y) => setAppWindows(prev => prev.map(w => w.kind === "dms" ? { ...w, x, y } : w))}
+                    />
+                );
                 return null;
             })}
 
-            {/* Floating chat windows */}
             {windows.map(w => {
-                const chMessages = messages[w.channelId] ?? [];
-                const chTyping   = [...(typingUsers[w.channelId] ?? new Map()).keys()].map(uid => usernames[uid] ?? `user ${uid}`);
+                const chMessages  = messages[w.channelId] ?? [];
+                const chTyping    = [...(typingUsers[w.channelId] ?? new Map()).keys()].map(uid => usernames[uid] ?? `user ${uid}`);
+                const chReactions = reactions[w.channelId] ?? {};
                 return (
                     <ChannelWindow
                         key={w.channelId}
@@ -305,11 +516,19 @@ export function HomeScreen({
                         typingNames={chTyping}
                         connected={connected}
                         x={w.x} y={w.y} zIndex={w.zIndex}
-                        onSend={text  => socketRef.current?.sendText(w.channelId, text)}
-                        onTyping={()  => socketRef.current?.sendTyping(w.channelId)}
-                        onClose={()   => setWindows(prev => prev.filter(p => p.channelId !== w.channelId))}
-                        onFocus={()   => { const z = bumpZ(); setWindows(prev => prev.map(p => p.channelId === w.channelId ? { ...p, zIndex: z } : p)); }}
-                        onDrag={(x, y) => setWindows(prev => prev.map(p => p.channelId === w.channelId ? { ...p, x, y } : p))}
+                        hasMore={hasMore[w.channelId] ?? false}
+                        loadingMore={loadingMore.has(w.channelId)}
+                        reactions={chReactions}
+                        onSend={text       => socketRef.current?.sendText(w.channelId, text)}
+                        onTyping={()       => socketRef.current?.sendTyping(w.channelId)}
+                        onClose={()        => setWindows(prev => prev.filter(p => p.channelId !== w.channelId))}
+                        onFocus={()        => { const z = bumpZ(); setWindows(prev => prev.map(p => p.channelId === w.channelId ? { ...p, zIndex: z } : p)); }}
+                        onDrag={(x, y)     => setWindows(prev => prev.map(p => p.channelId === w.channelId ? { ...p, x, y } : p))}
+                        onLoadMore={()     => loadMoreMessages(w.channelId)}
+                        onReact={(msgId, emoji) => socketRef.current?.sendReaction(w.channelId, msgId, emoji)}
+                        onEdit={(msgId, text)   => socketRef.current?.sendEdit(w.channelId, msgId, text)}
+                        onDelete={(msgId)       => socketRef.current?.sendDelete(w.channelId, msgId)}
+                        onUserHover={handleUserHover}
                     />
                 );
             })}
@@ -325,6 +544,19 @@ export function HomeScreen({
                 />
             )}
 
+            {popover && profiles[popover.userId] && (
+                <UserPopover
+                    profile={profiles[popover.userId]}
+                    isOnline={onlineUsers.has(popover.userId)}
+                    anchorX={popover.x}
+                    anchorY={popover.y}
+                    currentUserId={userId}
+                    onDm={openDmWith}
+                    onCall={initiateCall}
+                    onClose={() => setPopover(null)}
+                />
+            )}
+
             <TaskBar
                 userId={userId}
                 username={myName}
@@ -333,7 +565,17 @@ export function HomeScreen({
                 usernames={usernames}
                 onCall={initiateCall}
                 onDm={openDmWith}
-                onLogout={onLogout}
+                onLogout={handleLogout}
+                profileSlot={
+                    <ProfileMenu
+                        userId={userId}
+                        username={myName}
+                        about={myProfile?.about ?? myAbout}
+                        status={myStatus}
+                        onStatusChange={handleStatusChange}
+                        onAboutSave={handleAboutSave}
+                    />
+                }
             />
 
             <audio id="grove-remote-audio" autoPlay style={{ display: "none" }} />

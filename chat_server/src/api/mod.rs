@@ -10,6 +10,7 @@ use axum::extract::FromRequestParts;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use jsonwebtoken::{DecodingKey, Validation, decode};
+use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -50,8 +51,16 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedUser {
         )
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
+        let claims = &token_data.claims;
+        let blocklist_key = format!("blocklist:{}:{}", claims.sub, claims.exp);
+        let mut con = state.redis.clone();
+        let blocked: bool = con.exists(&blocklist_key).await.unwrap_or(false);
+        if blocked {
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+
         Ok(AuthenticatedUser {
-            user_id: token_data.claims.sub,
+            user_id: claims.sub,
         })
     }
 }

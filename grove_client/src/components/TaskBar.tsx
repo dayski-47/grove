@@ -1,5 +1,5 @@
 // src/components/TaskBar.tsx
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 const DAYS   = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -32,15 +32,17 @@ export function TaskBar({
     onCall,
     onDm,
     onLogout,
+    profileSlot,
 }: {
-    userId:      number;
-    username:    string;
-    connected:   boolean;
-    onlineUsers: Set<number>;
-    usernames:   Record<number, string>;
-    onCall:      (targetId: number) => void;
-    onDm:        (targetId: number) => void;
-    onLogout:    () => void;
+    userId:       number;
+    username:     string;
+    connected:    boolean;
+    onlineUsers:  Set<number>;
+    usernames:    Record<number, string>;
+    onCall:       (targetId: number) => void;
+    onDm:         (targetId: number) => void;
+    onLogout:     () => void;
+    profileSlot?: ReactNode;
 }) {
     const now  = useClock();
     const [showOnline, setShowOnline] = useState(false);
@@ -91,28 +93,32 @@ export function TaskBar({
             )}
 
             <nav className="grove-taskbar" aria-label="Application taskbar">
-                {/* Left: profile */}
-                <button
-                    className="grove-taskbar-profile"
-                    onClick={() => setShowOnline(v => !v)}
-                    aria-label={`${username} — ${others.length} online. Click to see who's here.`}
-                    aria-expanded={showOnline}
-                >
-                    <div
-                        className="grove-taskbar-avatar"
-                        style={{ background: avatarGradient(userId) }}
-                        aria-hidden="true"
-                    >
-                        {initial}
-                        <span className={`grove-taskbar-status${connected ? "" : " offline"}`} />
-                    </div>
-                    <div className="grove-taskbar-info">
-                        <span className="grove-taskbar-name">{username}</span>
-                        <span className="grove-taskbar-tag">
-                            {connected ? `${others.length} online` : "connecting…"}
-                        </span>
-                    </div>
-                </button>
+                {/* Left: profile slot (ProfileMenu) or plain avatar fallback */}
+                <div className="grove-taskbar-profile-wrap">
+                    {profileSlot ?? (
+                        <button
+                            className="grove-taskbar-profile"
+                            onClick={() => setShowOnline(v => !v)}
+                            aria-label={`${username} — ${others.length} online. Click to see who's here.`}
+                            aria-expanded={showOnline}
+                        >
+                            <div
+                                className="grove-taskbar-avatar"
+                                style={{ background: avatarGradient(userId) }}
+                                aria-hidden="true"
+                            >
+                                {initial}
+                                <span className={`grove-taskbar-status${connected ? "" : " offline"}`} />
+                            </div>
+                            <div className="grove-taskbar-info">
+                                <span className="grove-taskbar-name">{username}</span>
+                                <span className="grove-taskbar-tag">
+                                    {connected ? `${others.length} online` : "connecting…"}
+                                </span>
+                            </div>
+                        </button>
+                    )}
+                </div>
 
                 {/* Center: live clock */}
                 <div className="grove-taskbar-clock" aria-live="off">

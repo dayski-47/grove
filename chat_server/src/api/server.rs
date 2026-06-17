@@ -1,7 +1,8 @@
-use super::auth::{login, register};
+use super::auth::{login, logout, register};
 use super::messages::{
-    add_friend, create_channel, get_channel_online, get_history, get_user, join_channel,
-    list_channels, list_dms, list_friends, open_dm, remove_friend,
+    add_friend, create_channel, get_channel_online, get_channel_reactions, get_history, get_user,
+    join_channel, list_channels, list_dms, list_friends, open_dm, remove_friend, search_users,
+    update_my_profile,
 };
 use crate::api::AppState;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -21,10 +22,14 @@ pub async fn run_rest_server(
     let app = Router::new()
         .route("/api/auth/register", post(register))
         .route("/api/auth/login", post(login))
+        .route("/api/auth/logout", post(logout))
         .route("/api/messages/history", get(get_history))
+        .route("/api/messages/reactions", get(get_channel_reactions))
         .route("/api/channels/join", post(join_channel))
         .route("/api/channels/create", post(create_channel))
         .route("/api/users/{id}", get(get_user))
+        .route("/api/users/search", get(search_users))
+        .route("/api/users/me", axum::routing::put(update_my_profile))
         .route("/api/channels", get(list_channels))
         .route("/api/channels/online", get(get_channel_online))
         .route("/api/dm/open", post(open_dm))

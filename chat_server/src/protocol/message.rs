@@ -6,6 +6,9 @@ pub mod MessageType {
     pub const TYPING: u8 = 0x03;
     pub const PRESENCE: u8 = 0x04;
     pub const CALL_SIGNAL: u8 = 0x05;
+    pub const REACTION: u8 = 0x06;
+    pub const EDIT: u8 = 0x07;
+    pub const DELETE: u8 = 0x08;
 }
 
 #[repr(C)]

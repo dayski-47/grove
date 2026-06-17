@@ -8,14 +8,20 @@ type StatusHandler   = (connected: boolean) => void;
 type PresenceHandler = (userId: number, online: boolean, name?: string) => void;
 type SignalHandler   = (msg: SignalingMessage) => void;
 
+const BACKOFF_INITIAL = 1_000;
+const BACKOFF_MAX     = 30_000;
+
 export class GroveSocket {
-    private ws:         WebSocket | null = null;
-    private token:      string;
-    private userId:     number;
-    private onMessage:  MessageHandler;
-    private onStatus:   StatusHandler;
-    private onPresence: PresenceHandler | null;
-    private onSignal:   SignalHandler | null;
+    private ws:            WebSocket | null = null;
+    private token:         string;
+    private userId:        number;
+    private onMessage:     MessageHandler;
+    private onStatus:      StatusHandler;
+    private onPresence:    PresenceHandler | null;
+    private onSignal:      SignalHandler | null;
+    private destroyed:     boolean = false;
+    private reconnectMs:   number  = BACKOFF_INITIAL;
+    private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(
         token:      string,
@@ -34,23 +40,35 @@ export class GroveSocket {
     }
 
     connect(): void {
+        if (this.destroyed) return;
         const url = `${WS_BASE}?token=${encodeURIComponent(this.token)}`;
         this.ws = new WebSocket(url);
         this.ws.binaryType = "arraybuffer";
 
-        this.ws.onopen  = () => this.onStatus(true);
-        this.ws.onclose = () => this.onStatus(false);
-        this.ws.onerror = () => this.onStatus(false);
+        this.ws.onopen = () => {
+            this.reconnectMs = BACKOFF_INITIAL;
+            this.onStatus(true);
+        };
+
+        this.ws.onclose = () => {
+            this.onStatus(false);
+            this._scheduleReconnect();
+        };
+
+        this.ws.onerror = () => {
+            // onclose fires right after onerror, so no need to schedule here
+            this.onStatus(false);
+        };
 
         this.ws.onmessage = (event) => {
             if (event.data instanceof ArrayBuffer) {
                 try {
                     const msg = unpackMessage(event.data);
                     if (msg.msgType === MessageType.PRESENCE) {
-                        // payload format: "status" or "status:name"
+                        // payload: "status" or "status:name"
                         const colonIdx = msg.text.indexOf(":");
-                        const status = colonIdx === -1 ? msg.text : msg.text.slice(0, colonIdx);
-                        const name   = colonIdx === -1 ? undefined : msg.text.slice(colonIdx + 1);
+                        const status   = colonIdx === -1 ? msg.text : msg.text.slice(0, colonIdx);
+                        const name     = colonIdx === -1 ? undefined : msg.text.slice(colonIdx + 1);
                         this.onPresence?.(msg.userId, status === "online", name);
                     } else {
                         this.onMessage(msg);
@@ -69,32 +87,60 @@ export class GroveSocket {
         };
     }
 
+    private _scheduleReconnect(): void {
+        if (this.destroyed) return;
+        if (this.reconnectTimer !== null) return;
+        // Jitter: ±20% of the base delay to spread out thundering herds
+        const jitter = (Math.random() - 0.5) * 0.4 * this.reconnectMs;
+        const delay  = Math.min(this.reconnectMs + jitter, BACKOFF_MAX);
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.connect();
+        }, delay);
+        this.reconnectMs = Math.min(this.reconnectMs * 2, BACKOFF_MAX);
+    }
+
     sendText(channelId: number, text: string): void {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            console.warn("Socket not open");
-            return;
-        }
-        const buffer = packMessage(MessageType.TEXT, this.userId, channelId, text);
-        this.ws.send(buffer);
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        this.ws.send(packMessage(MessageType.TEXT, this.userId, channelId, text));
     }
 
     sendTyping(channelId: number): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-        const buffer = packMessage(MessageType.TYPING, this.userId, channelId, "");
-        this.ws.send(buffer);
+        this.ws.send(packMessage(MessageType.TYPING, this.userId, channelId, ""));
+    }
+
+    sendReaction(channelId: number, messageId: number, emoji: string): void {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        const payload = JSON.stringify({ message_id: messageId, emoji });
+        this.ws.send(packMessage(MessageType.REACTION, this.userId, channelId, payload));
+    }
+
+    sendEdit(channelId: number, messageId: number, text: string): void {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        const payload = JSON.stringify({ message_id: messageId, text });
+        this.ws.send(packMessage(MessageType.EDIT, this.userId, channelId, payload));
+    }
+
+    sendDelete(channelId: number, messageId: number): void {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        const payload = JSON.stringify({ message_id: messageId });
+        this.ws.send(packMessage(MessageType.DELETE, this.userId, channelId, payload));
     }
 
     sendSignaling(msg: SignalingMessage): void {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            console.warn("Socket not open");
-            return;
-        }
-        const json = JSON.stringify(msg);
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        const json   = JSON.stringify(msg);
         const buffer = packMessage(MessageType.CALL_SIGNAL, this.userId, 0, json);
         this.ws.send(buffer);
     }
 
     disconnect(): void {
+        this.destroyed = true;
+        if (this.reconnectTimer !== null) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
         this.ws?.close();
         this.ws = null;
     }

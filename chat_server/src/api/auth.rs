@@ -2,9 +2,11 @@ use crate::api::AppState;
 use crate::api::ratelimit::check_rate_limit;
 use crate::api::validation::{validate_email, validate_password, validate_username};
 use axum::extract::ConnectInfo;
+use axum::http::HeaderMap;
 use axum::{Json, extract::State, http::StatusCode};
 use bcrypt::{DEFAULT_COST, hash, verify};
-use jsonwebtoken::{EncodingKey, Header, encode};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -94,6 +96,16 @@ pub async fn register(
         )
     })?;
 
+    // Auto-join the "general" channel so every new user has somewhere to start.
+    let _ = sqlx::query(
+        "INSERT INTO channel_members (channel_id, user_id)
+         SELECT id, $1 FROM channels WHERE name = 'general' AND NOT is_dm LIMIT 1
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(user_id)
+    .execute(&state.db)
+    .await;
+
     Ok(Json(AuthResponse {
         token: mint_token(user_id, &state.jwt_secret)?,
         user_id,
@@ -144,8 +156,50 @@ pub async fn login(
         ));
     }
 
+    let _ = sqlx::query("UPDATE users SET last_seen = NOW() WHERE id = $1")
+        .bind(user.id)
+        .execute(&state.db)
+        .await;
+
     Ok(Json(AuthResponse {
         token: mint_token(user.id, &state.jwt_secret)?,
         user_id: user.id,
     }))
+}
+
+/// Invalidates the caller's current JWT by adding it to a Redis blocklist.
+pub async fn logout(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<StatusCode, StatusCode> {
+    let token = headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(state.jwt_secret.as_bytes()),
+        &Validation::default(),
+    )
+    .map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let claims = token_data.claims;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as usize;
+
+    let ttl = claims.exp.saturating_sub(now);
+    if ttl > 0 {
+        let key = format!("blocklist:{}:{}", claims.sub, claims.exp);
+        let mut con = state.redis.clone();
+        let _: () = con
+            .set_ex(&key, 1i64, ttl as u64)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    Ok(StatusCode::OK)
 }

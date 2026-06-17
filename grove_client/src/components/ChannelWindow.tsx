@@ -3,6 +3,8 @@ import { useEffect, useRef } from "react";
 import { MessageList, type DisplayMessage } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 
+type ReactionsMap = Record<number, Record<string, { count: number; byMe: boolean }>>;
+
 const AVATAR_COLORS = [
     "#1a7fd4","#2d8a3c","#7b52c8","#c07828",
     "#1a9090","#b03060","#4a70b8","#4a9060",
@@ -25,34 +27,49 @@ export function ChannelWindow({
     zIndex,
     isDm,
     partnerId,
+    hasMore,
+    loadingMore,
+    reactions,
     onSend,
     onTyping,
     onClose,
     onFocus,
     onDrag,
+    onLoadMore,
+    onReact,
+    onEdit,
+    onDelete,
+    onUserHover,
 }: {
-    channelName:  string;
-    messages:     DisplayMessage[];
-    usernames:    Record<number, string>;
+    channelName:   string;
+    messages:      DisplayMessage[];
+    usernames:     Record<number, string>;
     currentUserId: number;
-    typingNames:  string[];
-    connected:    boolean;
-    x:            number;
-    y:            number;
-    zIndex:       number;
-    isDm?:        boolean;
-    partnerId?:   number;
-    onSend:       (text: string) => void;
-    onTyping:     () => void;
-    onClose:      () => void;
-    onFocus:      () => void;
-    onDrag:       (x: number, y: number) => void;
+    typingNames:   string[];
+    connected:     boolean;
+    x:             number;
+    y:             number;
+    zIndex:        number;
+    isDm?:         boolean;
+    partnerId?:    number;
+    hasMore?:      boolean;
+    loadingMore?:  boolean;
+    reactions?:    ReactionsMap;
+    onSend:        (text: string) => void;
+    onTyping:      () => void;
+    onClose:       () => void;
+    onFocus:       () => void;
+    onDrag:        (x: number, y: number) => void;
+    onLoadMore?:   () => void;
+    onReact?:      (messageId: number, emoji: string) => void;
+    onEdit?:       (messageId: number, newText: string) => void;
+    onDelete?:     (messageId: number) => void;
+    onUserHover?:  (userId: number, event: React.MouseEvent) => void;
 }) {
     const dragging = useRef(false);
     const offset   = useRef({ x: 0, y: 0 });
 
     function onChromeMouseDown(e: React.MouseEvent) {
-        // Only drag on left-click, not on the control orbs
         if ((e.target as HTMLElement).closest(".grove-window-controls")) return;
         dragging.current = true;
         offset.current   = { x: e.clientX - x, y: e.clientY - y };
@@ -84,7 +101,6 @@ export function ChannelWindow({
             role="dialog"
             aria-label={`Channel #${channelName}`}
         >
-            {/* Vista titlebar */}
             <div
                 className="grove-window-chrome"
                 onMouseDown={onChromeMouseDown}
@@ -103,7 +119,6 @@ export function ChannelWindow({
                 )}
                 <span className="grove-window-title">{channelName}</span>
                 <div className="grove-window-controls">
-                    {/* Minimize — just closes for now (no dock) */}
                     <button
                         className="grove-window-orb grove-window-minimize"
                         onClick={onClose}
@@ -119,15 +134,21 @@ export function ChannelWindow({
                 </div>
             </div>
 
-            {/* Message area */}
             <div className="grove-window-body">
                 <MessageList
                     messages={messages}
                     currentUserId={currentUserId}
                     usernames={usernames}
+                    reactions={reactions}
+                    hasMore={hasMore}
+                    loadingMore={loadingMore}
+                    onLoadMore={onLoadMore}
+                    onReact={onReact}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onUserHover={onUserHover}
                 />
 
-                {/* Typing indicator */}
                 <div
                     className="grove-typing"
                     aria-live="polite"

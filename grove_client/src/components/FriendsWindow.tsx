@@ -1,6 +1,7 @@
 // src/components/FriendsWindow.tsx
 import { useEffect, useRef, useState } from "react";
-import type { FriendInfo } from "../types";
+import type { FriendInfo, UserProfile } from "../types";
+import { searchUsers } from "../api";
 
 const AVATAR_COLORS = [
     "#1a7fd4","#2d8a3c","#7b52c8","#c07828",
@@ -14,6 +15,7 @@ function avatarGradient(userId: number): string {
 
 export function FriendsWindow({
     friends,
+    token,
     x,
     y,
     zIndex,
@@ -25,6 +27,7 @@ export function FriendsWindow({
     onAddFriend,
 }: {
     friends:      FriendInfo[];
+    token:        string;
     x:            number;
     y:            number;
     zIndex:       number;
@@ -35,9 +38,12 @@ export function FriendsWindow({
     onCall:       (userId: number) => void;
     onAddFriend:  (userId: number) => void;
 }) {
-    const [addInput, setAddInput]   = useState("");
-    const [addError, setAddError]   = useState("");
-    const [addLoading, setAddLoading] = useState(false);
+    const [query,        setQuery]        = useState("");
+    const [results,      setResults]      = useState<UserProfile[]>([]);
+    const [searching,    setSearching]    = useState(false);
+    const [addError,     setAddError]     = useState("");
+    const [addedIds,     setAddedIds]     = useState<Set<number>>(new Set());
+    const searchTimer                     = useRef<ReturnType<typeof setTimeout> | null>(null);
     const dragging = useRef(false);
     const offset   = useRef({ x: 0, y: 0 });
 
@@ -65,23 +71,27 @@ export function FriendsWindow({
         };
     }, [onDrag]);
 
-    async function handleAddFriend() {
-        const idStr = addInput.trim();
-        const id    = Number(idStr);
-        if (!idStr || isNaN(id) || id <= 0) {
-            setAddError("enter a valid user ID");
-            return;
-        }
+    function handleQueryChange(value: string) {
+        setQuery(value);
         setAddError("");
-        setAddLoading(true);
-        try {
-            onAddFriend(id);
-            setAddInput("");
-        } catch {
-            setAddError("couldn't add friend");
-        } finally {
-            setAddLoading(false);
-        }
+        if (searchTimer.current) clearTimeout(searchTimer.current);
+        if (!value.trim()) { setResults([]); return; }
+        searchTimer.current = setTimeout(async () => {
+            setSearching(true);
+            try {
+                const res = await searchUsers(value.trim(), token);
+                setResults(res);
+            } catch { setResults([]); }
+            finally { setSearching(false); }
+        }, 300);
+    }
+
+    function handleAdd(profile: UserProfile) {
+        const alreadyFriend = friends.some(f => f.user_id === profile.id);
+        if (alreadyFriend) { setAddError("Already friends!"); return; }
+        onAddFriend(profile.id);
+        setAddedIds(prev => new Set([...prev, profile.id]));
+        setAddError("");
     }
 
     const online  = friends.filter(f => f.online);
@@ -90,7 +100,7 @@ export function FriendsWindow({
     return (
         <div
             className="grove-window grove-list-window"
-            style={{ left: x, top: y, zIndex, width: 360, height: 480 }}
+            style={{ left: x, top: y, zIndex, width: 360, height: 520 }}
             onMouseDown={onFocus}
             role="dialog"
             aria-label="Friends"
@@ -109,6 +119,48 @@ export function FriendsWindow({
             </div>
 
             <div className="grove-list-body">
+                {/* Friend search + add */}
+                <div className="grove-friends-search-wrap">
+                    <input
+                        className="grove-input grove-friends-search"
+                        placeholder="Search by username…"
+                        value={query}
+                        onChange={e => handleQueryChange(e.target.value)}
+                        aria-label="Search users to add"
+                    />
+                    {searching && <span className="grove-friends-searching">searching…</span>}
+
+                    {results.length > 0 && query.trim() && (
+                        <div className="grove-friends-results" role="listbox">
+                            {results.map(r => {
+                                const alreadyFriend = friends.some(f => f.user_id === r.id);
+                                const added         = addedIds.has(r.id);
+                                return (
+                                    <div key={r.id} className="grove-friends-result-row" role="option">
+                                        <div
+                                            className="grove-friend-avatar"
+                                            style={{ background: avatarGradient(r.id) }}
+                                            aria-hidden="true"
+                                        >
+                                            {r.username.slice(0, 1).toUpperCase()}
+                                        </div>
+                                        <span className="grove-friends-result-name">{r.username}</span>
+                                        <button
+                                            className="grove-btn-primary grove-btn-sm"
+                                            onClick={() => handleAdd(r)}
+                                            disabled={alreadyFriend || added}
+                                            aria-label={alreadyFriend ? "Already friends" : `Add ${r.username}`}
+                                        >
+                                            {alreadyFriend || added ? "✓" : "Add"}
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                    {addError && <p className="grove-list-footer-error">{addError}</p>}
+                </div>
+
                 <div className="grove-list-scroll" role="list">
                     {online.length > 0 && (
                         <div className="grove-list-section-label">Online — {online.length}</div>
@@ -116,38 +168,15 @@ export function FriendsWindow({
                     {online.map(f => (
                         <FriendRow key={f.user_id} friend={f} gradient={avatarGradient(f.user_id)} onDm={onDm} onCall={onCall} />
                     ))}
-
                     {offline.length > 0 && (
                         <div className="grove-list-section-label">Offline — {offline.length}</div>
                     )}
                     {offline.map(f => (
                         <FriendRow key={f.user_id} friend={f} gradient={avatarGradient(f.user_id)} onDm={onDm} onCall={onCall} />
                     ))}
-
-                    {friends.length === 0 && (
-                        <p className="grove-list-empty">No friends yet. Add one below!</p>
+                    {friends.length === 0 && !query && (
+                        <p className="grove-list-empty">No friends yet. Search for someone above!</p>
                     )}
-                </div>
-
-                <div className="grove-list-footer">
-                    <input
-                        className="grove-input"
-                        placeholder="user ID to add"
-                        value={addInput}
-                        onChange={e => { setAddInput(e.target.value); setAddError(""); }}
-                        onKeyDown={e => { if (e.key === "Enter") handleAddFriend(); }}
-                        aria-label="Friend user ID"
-                        disabled={addLoading}
-                    />
-                    <button
-                        className="grove-btn-primary"
-                        onClick={handleAddFriend}
-                        disabled={addLoading}
-                        aria-label="Add friend"
-                    >
-                        Add
-                    </button>
-                    {addError && <p className="grove-list-footer-error">{addError}</p>}
                 </div>
             </div>
         </div>

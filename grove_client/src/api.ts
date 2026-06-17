@@ -1,6 +1,8 @@
 // src/api.ts
 import { API_BASE } from "./config";
 import type {
+    ReactionSummary,
+    UserProfile,
     AuthResponse,
     RegisterRequest,
     LoginRequest,
@@ -43,28 +45,10 @@ export function login(req: LoginRequest): Promise<AuthResponse> {
     return postJson<AuthResponse>("/api/auth/login", req);
 }
 
-export interface UserProfile {
-    id: number;
-    username: string;
-}
-
 export interface ChannelInfo {
   id: number;
   name: string;
 }
-
-
-export async function getUser(
-    userId: number,
-    token: string
-): Promise<UserProfile> {
-    const res = await fetch(`${API_BASE}/api/users/${userId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`User fetch failed: ${res.status}`);
-    return (await res.json()) as UserProfile;
-}
-
 
 export function createChannel(
     name: string,
@@ -136,4 +120,52 @@ export async function getHistory(
 
     if (!res.ok) throw new Error(`History fetch failed: ${res.status}`);
     return (await res.json()) as HistoricMessage[];
+}
+
+export async function getChannelReactions(
+    channelId: number,
+    token: string,
+): Promise<ReactionSummary[]> {
+    const res = await fetch(
+        `${API_BASE}/api/messages/reactions?channel_id=${channelId}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) return [];
+    return (await res.json()) as ReactionSummary[];
+}
+
+export async function logout(token: string): Promise<void> {
+    await fetch(`${API_BASE}/api/auth/logout`, {
+        method:  "POST",
+        headers: { Authorization: `Bearer ${token}` },
+    });
+}
+
+export async function getUserProfile(userId: number, token: string): Promise<UserProfile> {
+    const res = await fetch(`${API_BASE}/api/users/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("User not found");
+    return (await res.json()) as UserProfile;
+}
+
+export async function searchUsers(query: string, token: string): Promise<UserProfile[]> {
+    if (!query.trim()) return [];
+    const res = await fetch(
+        `${API_BASE}/api/users/search?q=${encodeURIComponent(query.trim())}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) return [];
+    return (await res.json()) as UserProfile[];
+}
+
+export async function updateAbout(about: string, token: string): Promise<void> {
+    await fetch(`${API_BASE}/api/users/me`, {
+        method:  "PUT",
+        headers: {
+            "Content-Type":  "application/json",
+            "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ about }),
+    });
 }

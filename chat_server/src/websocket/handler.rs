@@ -30,6 +30,14 @@ pub async fn handle_connection(
         state.user_pool.insert(User::new(user_id, &name));
     }
 
+    let _ = sqlx::query("UPDATE users SET last_seen = NOW() WHERE id = $1")
+        .bind(user_id as i64)
+        .execute(&app_state.db)
+        .await;
+
+    if let Err(e) = seed_redis_membership(user_id, &app_state.db, &app_state.redis).await {
+        eprintln!("warn: redis membership seed failed for {user_id}: {e}");
+    }
     app_state.presence.mark_online(user_id).await?;
     send_online_roster(user_id, &state);
     broadcast_presence(user_id, "online", &state);
@@ -84,6 +92,27 @@ fn sanitize_frame(data: &[u8], user_id: u64, timestamp: u32) -> Vec<u8> {
     frame
 }
 
+fn make_typed_text_frame(
+    msg_type: u8,
+    user_id: u64,
+    channel_id: u32,
+    timestamp: u32,
+    text: &str,
+) -> Option<Vec<u8>> {
+    let text_bytes = text.as_bytes();
+    let mut buf = vec![0u8; MessageHeader::SIZE + text_bytes.len()];
+    let header = MessageHeader {
+        msg_type,
+        user_id: user_id as u32,
+        channel_id,
+        timestamp,
+        text_len: text_bytes.len() as u16,
+    };
+    header.to_bytes(&mut buf).ok()?;
+    buf[MessageHeader::SIZE..].copy_from_slice(text_bytes);
+    Some(buf)
+}
+
 // Payload format: "status" or "status:name" — clients learn usernames from presence frames.
 fn make_presence_frame(user_id: u64, status: &str, name: Option<&str>) -> Option<WsMessage> {
     let payload = match name {
@@ -102,6 +131,43 @@ fn make_presence_frame(user_id: u64, status: &str, name: Option<&str>) -> Option
     header.to_bytes(&mut buf).ok()?;
     buf[MessageHeader::SIZE..].copy_from_slice(text_bytes);
     Some(WsMessage::Binary(buf.into()))
+}
+
+async fn seed_redis_membership(
+    user_id: u64,
+    db: &sqlx::PgPool,
+    redis: &ConnectionManager,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut con = redis.clone();
+
+    // Regular channels the user has joined
+    let channel_ids: Vec<i64> =
+        sqlx::query_scalar("SELECT channel_id FROM channel_members WHERE user_id = $1")
+            .bind(user_id as i64)
+            .fetch_all(db)
+            .await?;
+    for cid in channel_ids {
+        let key = format!("channel:{}:members", cid);
+        let _: () = con.sadd(&key, user_id as i64).await?;
+    }
+
+    // DM channels — both parties must be in the Redis set
+    let dm_rows: Vec<(i64, i64, i64)> = sqlx::query_as(
+        "SELECT channel_id, user_a, user_b FROM direct_messages WHERE user_a = $1 OR user_b = $1",
+    )
+    .bind(user_id as i64)
+    .fetch_all(db)
+    .await?;
+    for (cid, a, b) in dm_rows {
+        let key = format!("channel:{}:members", cid);
+        let _: (i64, i64) = redis::pipe()
+            .sadd(&key, a)
+            .sadd(&key, b)
+            .query_async(&mut con)
+            .await?;
+    }
+
+    Ok(())
 }
 
 fn broadcast_presence(user_id: u64, status: &str, state: &ServerState) {
@@ -163,12 +229,10 @@ pub async fn handle_binary_message(
             if validate_message_text(&text).is_err() {
                 return Ok(());
             }
-            // Security: verify the sender is actually a member before persisting.
             if !is_channel_member(user_id, channel_id, &app_state.redis).await {
                 return Ok(());
             }
-            let frame = sanitize_frame(data, user_id, ts);
-            crate::database::messages::insert_message(
+            let msg_id = crate::database::messages::insert_message(
                 &app_state.db,
                 channel_id,
                 user_id,
@@ -176,6 +240,23 @@ pub async fn handle_binary_message(
                 ts,
             )
             .await?;
+            // Broadcast frame: header + [8-byte msg_id u64 LE] + text bytes.
+            // The msg_id prefix lets clients link live messages to their DB row
+            // (needed for reactions, edits, and deletes).
+            let text_bytes = text.as_bytes();
+            let payload_len = 8 + text_bytes.len();
+            let mut frame = vec![0u8; MessageHeader::SIZE + payload_len];
+            MessageHeader {
+                msg_type: MessageType::TEXT,
+                user_id: user_id as u32,
+                channel_id: channel_id as u32,
+                timestamp: ts,
+                text_len: payload_len as u16,
+            }
+            .to_bytes(&mut frame)?;
+            frame[MessageHeader::SIZE..MessageHeader::SIZE + 8]
+                .copy_from_slice(&msg_id.to_le_bytes());
+            frame[MessageHeader::SIZE + 8..].copy_from_slice(text_bytes);
             broadcast_to_channel(&frame, channel_id, state, &app_state.redis).await?;
         }
 
@@ -203,6 +284,128 @@ pub async fn handle_binary_message(
                     .signaling
                     .handle_message(sig_msg.with_from(user_id))
                     .await?;
+            }
+        }
+
+        // Client can set their own activity status by sending a PRESENCE frame.
+        // Valid statuses: "online", "away", "busy", "do_not_disturb"
+        MessageType::PRESENCE => {
+            const VALID: &[&str] = &["online", "away", "busy", "do_not_disturb"];
+            let status = text.trim();
+            if VALID.contains(&status) {
+                broadcast_presence(user_id, status, &state);
+            }
+        }
+
+        MessageType::REACTION => {
+            if !is_channel_member(user_id, channel_id, &app_state.redis).await {
+                return Ok(());
+            }
+            #[derive(serde::Deserialize)]
+            struct ReactionPayload {
+                message_id: i64,
+                emoji: String,
+            }
+            let Ok(payload) = serde_json::from_str::<ReactionPayload>(&text) else {
+                return Ok(());
+            };
+            let Some((msg_id, action, count)) = crate::database::messages::toggle_reaction(
+                &app_state.db,
+                payload.message_id,
+                channel_id as i64,
+                user_id as i64,
+                &payload.emoji,
+            )
+            .await?
+            else {
+                return Ok(());
+            };
+            let broadcast_text = serde_json::json!({
+                "message_id": msg_id,
+                "emoji":      payload.emoji,
+                "action":     action,
+                "user_id":    user_id,
+                "count":      count,
+            })
+            .to_string();
+            if let Some(frame) = make_typed_text_frame(
+                MessageType::REACTION,
+                user_id,
+                channel_id as u32,
+                ts,
+                &broadcast_text,
+            ) {
+                broadcast_to_channel(&frame, channel_id, state, &app_state.redis).await?;
+            }
+        }
+
+        MessageType::EDIT => {
+            #[derive(serde::Deserialize)]
+            struct EditPayload {
+                message_id: i64,
+                text: String,
+            }
+            let Ok(payload) = serde_json::from_str::<EditPayload>(&text) else {
+                return Ok(());
+            };
+            if validate_message_text(&payload.text).is_err() {
+                return Ok(());
+            }
+            let Some(_) = crate::database::messages::edit_message(
+                &app_state.db,
+                payload.message_id,
+                channel_id as i64,
+                user_id as i64,
+                &payload.text,
+            )
+            .await?
+            else {
+                return Ok(());
+            };
+            let broadcast_text = serde_json::json!({
+                "message_id": payload.message_id,
+                "text":       payload.text,
+            })
+            .to_string();
+            if let Some(frame) = make_typed_text_frame(
+                MessageType::EDIT,
+                user_id,
+                channel_id as u32,
+                ts,
+                &broadcast_text,
+            ) {
+                broadcast_to_channel(&frame, channel_id, state, &app_state.redis).await?;
+            }
+        }
+
+        MessageType::DELETE => {
+            #[derive(serde::Deserialize)]
+            struct DeletePayload {
+                message_id: i64,
+            }
+            let Ok(payload) = serde_json::from_str::<DeletePayload>(&text) else {
+                return Ok(());
+            };
+            let Some(_) = crate::database::messages::delete_message(
+                &app_state.db,
+                payload.message_id,
+                channel_id as i64,
+                user_id as i64,
+            )
+            .await?
+            else {
+                return Ok(());
+            };
+            let broadcast_text =
+                serde_json::json!({ "message_id": payload.message_id }).to_string();
+            if let Some(frame) = make_typed_text_frame(
+                MessageType::DELETE,
+                user_id,
+                channel_id as u32,
+                ts,
+                &broadcast_text,
+            ) {
+                broadcast_to_channel(&frame, channel_id, state, &app_state.redis).await?;
             }
         }
 

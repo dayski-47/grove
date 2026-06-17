@@ -24,6 +24,21 @@ pub struct HistoricMessage {
     pub user_id: i64,
     pub text: String,
     pub timestamp: i32,
+    pub edited: bool,
+    pub deleted: bool,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct ReactionSummary {
+    pub message_id: i64,
+    pub emoji: String,
+    pub count: i64,
+    pub by_me: bool,
+}
+
+#[derive(Deserialize)]
+pub struct ReactionsQuery {
+    pub channel_id: i64,
 }
 
 #[derive(Deserialize)]
@@ -43,8 +58,20 @@ pub struct CreateChannelResponse {
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct UserProfile {
-    pub id: i64,
-    pub username: String,
+    pub id:        i64,
+    pub username:  String,
+    pub about:     String,
+    pub last_seen: i64,
+}
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
+    pub q: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateProfileBody {
+    pub about: String,
 }
 
 #[derive(Deserialize)]
@@ -68,12 +95,52 @@ pub async fn get_user(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(user_id): axum::extract::Path<i64>,
 ) -> Result<Json<UserProfile>, StatusCode> {
-    let user = sqlx::query_as::<_, UserProfile>("SELECT id, username FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let user = sqlx::query_as::<_, UserProfile>(
+        "SELECT id, username, about,
+                FLOOR(EXTRACT(EPOCH FROM last_seen))::BIGINT AS last_seen
+         FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| StatusCode::NOT_FOUND)?;
     Ok(Json(user))
+}
+
+pub async fn search_users(
+    _auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<SearchQuery>,
+) -> Result<Json<Vec<UserProfile>>, StatusCode> {
+    let pattern = format!("%{}%", params.q.trim().to_lowercase());
+    let users = sqlx::query_as::<_, UserProfile>(
+        "SELECT id, username, about,
+                FLOOR(EXTRACT(EPOCH FROM last_seen))::BIGINT AS last_seen
+         FROM users
+         WHERE LOWER(username) LIKE $1
+         ORDER BY username ASC
+         LIMIT 20",
+    )
+    .bind(&pattern)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(users))
+}
+
+pub async fn update_my_profile(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<UpdateProfileBody>,
+) -> Result<StatusCode, StatusCode> {
+    let about = body.about.chars().take(280).collect::<String>();
+    sqlx::query("UPDATE users SET about = $1 WHERE id = $2")
+        .bind(&about)
+        .bind(auth.user_id)
+        .execute(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::OK)
 }
 
 pub async fn create_channel(
@@ -104,6 +171,20 @@ pub async fn create_channel(
         )
     })?;
 
+    sqlx::query(
+        "INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(channel_id)
+    .bind(auth.user_id)
+    .execute(&state.db)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Server error".to_string(),
+        )
+    })?;
+
     Ok(Json(CreateChannelResponse { channel_id }))
 }
 
@@ -124,7 +205,11 @@ pub async fn get_history(
 
     let limit = params.limit.unwrap_or(50).min(100);
     let messages = sqlx::query_as::<_, HistoricMessage>(
-        "SELECT id, user_id, text, timestamp
+        "SELECT id, user_id,
+                CASE WHEN deleted_at IS NOT NULL THEN '' ELSE text END AS text,
+                timestamp,
+                edited_at  IS NOT NULL AS edited,
+                deleted_at IS NOT NULL AS deleted
          FROM messages
          WHERE channel_id = $1 AND id < $2
          ORDER BY id DESC
@@ -162,6 +247,15 @@ pub async fn join_channel(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    sqlx::query(
+        "INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(req.channel_id)
+    .bind(auth.user_id)
+    .execute(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
     Ok(StatusCode::OK)
 }
 
@@ -193,12 +287,46 @@ pub async fn list_channels(
     _auth: AuthenticatedUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ChannelInfo>>, StatusCode> {
-    let channels =
-        sqlx::query_as::<_, ChannelInfo>("SELECT id, name FROM channels ORDER BY id ASC")
-            .fetch_all(&state.db)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let channels = sqlx::query_as::<_, ChannelInfo>(
+        "SELECT id, name FROM channels WHERE NOT is_dm ORDER BY id ASC",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(channels))
+}
+
+pub async fn get_channel_reactions(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ReactionsQuery>,
+) -> Result<Json<Vec<ReactionSummary>>, StatusCode> {
+    let mut con = state.redis.clone();
+    let key = format!("channel:{}:members", params.channel_id);
+    let is_member: bool = con
+        .sismember(&key, auth.user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !is_member {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let reactions = sqlx::query_as::<_, ReactionSummary>(
+        "SELECT r.message_id, r.emoji,
+                COUNT(*)::BIGINT            AS count,
+                bool_or(r.user_id = $2)    AS by_me
+         FROM reactions r
+         JOIN messages m ON m.id = r.message_id
+         WHERE m.channel_id = $1
+         GROUP BY r.message_id, r.emoji",
+    )
+    .bind(params.channel_id)
+    .bind(auth.user_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(reactions))
 }
 
 // ── Direct messages ──────────────────────────────────────────────────────────
@@ -276,7 +404,7 @@ pub async fn open_dm(
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;
 
     let channel_id: i64 =
-        sqlx::query_scalar("INSERT INTO channels (name) VALUES ('dm') RETURNING id")
+        sqlx::query_scalar("INSERT INTO channels (name, is_dm) VALUES ('dm', TRUE) RETURNING id")
             .fetch_one(&mut *tx)
             .await
             .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;

@@ -1,7 +1,7 @@
 // src/components/ChatScreen.tsx
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GroveSocket } from "../socket";
-import { getHistory, joinChannel, createChannel, getUser, listChannels } from "../api";
+import { getHistory, joinChannel, createChannel, getUserProfile, listChannels } from "../api";
 import { MessageType, type ParsedMessage, type SignalingMessage } from "../types";
 import { ChannelSidebar, type Channel } from "./ChannelSidebar";
 import { MessageList, type DisplayMessage } from "./MessageList";
@@ -56,8 +56,8 @@ export function ChatScreen({
         }
         setUsernames((prev) => {
             if (uid in prev) return prev;
-            getUser(uid, token)
-                .then((profile) => setUsernames((p) => ({ ...p, [uid]: profile.username })))
+            getUserProfile(uid, token)
+                .then((profile: { username: string }) => setUsernames((p) => ({ ...p, [uid]: profile.username })))
                 .catch(() => setUsernames((p) => ({ ...p, [uid]: `user ${uid}` })));
             return { ...prev, [uid]: `user ${uid}` };
         });
