@@ -5,6 +5,7 @@ import type {
     RegisterRequest,
     LoginRequest,
     CreateChannelResponse,
+    DmInfo,
     HistoricMessage,
 } from "./types";
 
@@ -88,6 +89,18 @@ export async function listChannels(token: string): Promise<ChannelInfo[]> {
   });
   if (!res.ok) throw new Error(`Failed to fetch channels: ${res.status}`);
   return (await res.json()) as ChannelInfo[];
+}
+
+export async function openDm(withUser: number, token: string): Promise<{ channel_id: number }> {
+    return postJson<{ channel_id: number }>("/api/dm/open", { with_user: withUser }, token);
+}
+
+export async function listDms(token: string): Promise<DmInfo[]> {
+    const res = await fetch(`${API_BASE}/api/dm/list`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to fetch DMs: ${res.status}`);
+    return (await res.json()) as DmInfo[];
 }
 
 export async function getHistory(

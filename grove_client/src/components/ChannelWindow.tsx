@@ -3,6 +3,16 @@ import { useEffect, useRef } from "react";
 import { MessageList, type DisplayMessage } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 
+const AVATAR_COLORS = [
+    "#1a7fd4","#2d8a3c","#7b52c8","#c07828",
+    "#1a9090","#b03060","#4a70b8","#4a9060",
+];
+
+function avatarGradient(partnerId: number): string {
+    const c = AVATAR_COLORS[partnerId % AVATAR_COLORS.length];
+    return `radial-gradient(circle at 38% 30%, rgba(255,255,255,0.88) 0%, ${c} 45%, ${c}cc 100%)`;
+}
+
 export function ChannelWindow({
     channelName,
     messages,
@@ -13,6 +23,8 @@ export function ChannelWindow({
     x,
     y,
     zIndex,
+    isDm,
+    partnerId,
     onSend,
     onTyping,
     onClose,
@@ -28,6 +40,8 @@ export function ChannelWindow({
     x:            number;
     y:            number;
     zIndex:       number;
+    isDm?:        boolean;
+    partnerId?:   number;
     onSend:       (text: string) => void;
     onTyping:     () => void;
     onClose:      () => void;
@@ -76,7 +90,17 @@ export function ChannelWindow({
                 onMouseDown={onChromeMouseDown}
                 role="banner"
             >
-                <span className="grove-window-hash" aria-hidden="true">#</span>
+                {isDm && partnerId !== undefined ? (
+                    <div
+                        className="grove-window-dm-orb"
+                        style={{ background: avatarGradient(partnerId) }}
+                        aria-hidden="true"
+                    >
+                        {channelName.slice(0, 1).toUpperCase()}
+                    </div>
+                ) : (
+                    <span className="grove-window-hash" aria-hidden="true">#</span>
+                )}
                 <span className="grove-window-title">{channelName}</span>
                 <div className="grove-window-controls">
                     {/* Minimize — just closes for now (no dock) */}

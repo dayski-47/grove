@@ -1,8 +1,8 @@
 // src/components/HomeScreen.tsx
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GroveSocket } from "../socket";
-import { getHistory, joinChannel, createChannel, getUser, listChannels } from "../api";
-import { MessageType, type ParsedMessage, type SignalingMessage } from "../types";
+import { getHistory, joinChannel, createChannel, getUser, listChannels, openDm, listDms } from "../api";
+import { MessageType, type ParsedMessage, type SignalingMessage, type DmInfo } from "../types";
 import type { DisplayMessage } from "./MessageList";
 import { ChannelWindow } from "./ChannelWindow";
 import { TaskBar } from "./TaskBar";
@@ -15,7 +15,15 @@ const TILE_ACCENTS = [
 ];
 
 interface Channel { id: number; name: string; }
-interface WindowState { channelId: number; x: number; y: number; zIndex: number; }
+interface WindowState {
+    channelId:   number;
+    x:           number;
+    y:           number;
+    zIndex:      number;
+    kind:        "channel" | "dm";
+    displayName: string;
+    partnerId?:  number;
+}
 
 export function HomeScreen({
     token,
@@ -27,6 +35,7 @@ export function HomeScreen({
     onLogout: () => void;
 }) {
     const [channels, setChannels]       = useState<Channel[]>([]);
+    const [dms, setDms]                 = useState<DmInfo[]>([]);
     const [messages, setMessages]       = useState<Record<number, DisplayMessage[]>>({});
     const [connected, setConnected]     = useState(false);
     const [usernames, setUsernames]     = useState<Record<number, string>>({});
@@ -125,10 +134,17 @@ export function HomeScreen({
             .then(chs => setChannels(chs.map(c => ({ id: c.id, name: c.name }))))
             .catch(console.error);
 
+        listDms(token)
+            .then(list => {
+                setDms(list);
+                list.forEach(dm => resolveUsername(dm.partner_id, dm.partner_name));
+            })
+            .catch(console.error);
+
         return () => socket.disconnect();
     }, [token, userId, handleSignal, resolveUsername]);
 
-    async function openChannel(channelId: number) {
+    async function openChannel(channelId: number, displayName?: string, kind: "channel" | "dm" = "channel", partnerId?: number) {
         // Bring existing window to front
         const exists = windows.find(w => w.channelId === channelId);
         if (exists) {
@@ -143,7 +159,7 @@ export function HomeScreen({
         if (!loadedRef.current.has(channelId)) {
             loadedRef.current.add(channelId);
             try {
-                await joinChannel(channelId, token);
+                if (kind === "channel") await joinChannel(channelId, token);
                 const history = await getHistory(channelId, token);
                 const msgs = history.slice().reverse().map(m => ({
                     userId:    m.user_id,
@@ -152,7 +168,7 @@ export function HomeScreen({
                 }));
                 setMessages(prev => ({ ...prev, [channelId]: msgs }));
                 [...new Set(history.map(m => m.user_id))].forEach(uid => resolveUsername(uid));
-            } catch { /* already joined */ }
+            } catch { /* already member */ }
         }
 
         // Cascade new window position
@@ -160,8 +176,33 @@ export function HomeScreen({
         zRef.current++;
         setWindows(prev => [
             ...prev,
-            { channelId, x: 60 + offset, y: 40 + offset, zIndex: zRef.current },
+            {
+                channelId,
+                x: 60 + offset,
+                y: 40 + offset,
+                zIndex: zRef.current,
+                kind,
+                displayName: displayName ?? String(channelId),
+                partnerId,
+            },
         ]);
+    }
+
+    async function openDmWith(partnerId: number) {
+        const existingDm = dms.find(d => d.partner_id === partnerId);
+        if (existingDm) {
+            openChannel(existingDm.channel_id, existingDm.partner_name, "dm", partnerId);
+            return;
+        }
+        try {
+            const { channel_id } = await openDm(partnerId, token);
+            const partnerName = usernames[partnerId] ?? `user ${partnerId}`;
+            const newDm: DmInfo = { channel_id, partner_id: partnerId, partner_name: partnerName };
+            setDms(prev => [newDm, ...prev]);
+            openChannel(channel_id, partnerName, "dm", partnerId);
+        } catch (e) {
+            console.error("Failed to open DM", e);
+        }
     }
 
     async function handleCreateChannel() {
@@ -172,7 +213,7 @@ export function HomeScreen({
             const newChannel = { id: res.channel_id, name };
             setChannels(prev => [...prev, newChannel]);
             setNewChannelName("");
-            openChannel(res.channel_id);
+            openChannel(res.channel_id, name, "channel");
         } catch { console.error("Failed to create channel"); }
     }
 
@@ -180,20 +221,21 @@ export function HomeScreen({
 
     return (
         <div className="grove-home">
-            {/* Wii U channel tile grid */}
+            {/* Wii U tile grid */}
             <div className="grove-tiles" role="main">
+                {/* Channel tiles */}
                 {channels.map((ch, i) => {
                     const accent = TILE_ACCENTS[i % TILE_ACCENTS.length];
                     const isOpen = windows.some(w => w.channelId === ch.id);
                     return (
                         <div
-                            key={ch.id}
+                            key={`ch-${ch.id}`}
                             className="grove-tile-float"
                             style={{ animationDelay: `${(i % 6) * 0.4}s` }}
                         >
                             <button
                                 className={`grove-tile${isOpen ? " grove-tile-open" : ""}`}
-                                onClick={() => openChannel(ch.id)}
+                                onClick={() => openChannel(ch.id, ch.name, "channel")}
                                 aria-label={`Open channel ${ch.name}${isOpen ? " (open)" : ""}`}
                                 aria-pressed={isOpen}
                             >
@@ -237,18 +279,49 @@ export function HomeScreen({
                         </div>
                     </div>
                 </div>
+
+                {/* DM tiles */}
+                {dms.map((dm, i) => {
+                    const accent = TILE_ACCENTS[dm.partner_id % TILE_ACCENTS.length];
+                    const isOpen = windows.some(w => w.channelId === dm.channel_id);
+                    const initial = dm.partner_name.slice(0, 1).toUpperCase();
+                    return (
+                        <div
+                            key={`dm-${dm.channel_id}`}
+                            className="grove-tile-float"
+                            style={{ animationDelay: `${((channels.length + 1 + i) % 6) * 0.4}s` }}
+                        >
+                            <button
+                                className={`grove-tile${isOpen ? " grove-tile-open" : ""}`}
+                                onClick={() => openChannel(dm.channel_id, dm.partner_name, "dm", dm.partner_id)}
+                                aria-label={`DM with ${dm.partner_name}${isOpen ? " (open)" : ""}`}
+                                aria-pressed={isOpen}
+                            >
+                                {/* DM accent: avatar orb */}
+                                <div className="grove-tile-accent grove-tile-accent-dm" style={{ background: accent }}>
+                                    <span className="grove-tile-dm-initial">{initial}</span>
+                                </div>
+                                <div className="grove-tile-body">
+                                    <span className="grove-tile-hash" aria-hidden="true" style={{ fontSize: 11, opacity: 0.7 }}>DM</span>
+                                    <span className="grove-tile-name">{dm.partner_name}</span>
+                                </div>
+                            </button>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Floating channel windows */}
             {windows.map(w => {
-                const ch          = channels.find(c => c.id === w.channelId);
-                const chMessages  = messages[w.channelId] ?? [];
-                const chTyping    = [...(typingUsers[w.channelId] ?? new Map()).keys()]
+                const chMessages = messages[w.channelId] ?? [];
+                const chTyping   = [...(typingUsers[w.channelId] ?? new Map()).keys()]
                     .map(uid => usernames[uid] ?? `user ${uid}`);
                 return (
                     <ChannelWindow
                         key={w.channelId}
-                        channelName={ch?.name ?? "…"}
+                        channelName={w.displayName}
+                        isDm={w.kind === "dm"}
+                        partnerId={w.partnerId}
                         messages={chMessages}
                         usernames={usernames}
                         currentUserId={userId}
@@ -293,6 +366,7 @@ export function HomeScreen({
                 onlineUsers={onlineUsers}
                 usernames={usernames}
                 onCall={initiateCall}
+                onDm={openDmWith}
                 onLogout={onLogout}
             />
 

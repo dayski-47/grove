@@ -1,6 +1,7 @@
 use super::auth::{login, register};
 use super::messages::{
     create_channel, get_channel_online, get_history, get_user, join_channel, list_channels,
+    list_dms, open_dm,
 };
 use crate::api::AppState;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -26,6 +27,8 @@ pub async fn run_rest_server(
         .route("/api/users/{id}", get(get_user))
         .route("/api/channels", get(list_channels))
         .route("/api/channels/online", get(get_channel_online))
+        .route("/api/dm/open", post(open_dm))
+        .route("/api/dm/list", get(list_dms))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(
             CorsLayer::new()

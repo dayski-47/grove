@@ -20,6 +20,12 @@ export interface CreateChannelResponse {
   channel_id: number;
 }
 
+export interface DmInfo {
+  channel_id:   number;
+  partner_id:   number;
+  partner_name: string;
+}
+
 export interface HistoricMessage {
   id: number;
   user_id: number;

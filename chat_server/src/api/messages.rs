@@ -198,3 +198,126 @@ pub async fn list_channels(
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(channels))
 }
+
+// ── Direct messages ──────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct OpenDmRequest {
+    pub with_user: i64,
+}
+
+#[derive(Serialize)]
+pub struct OpenDmResponse {
+    pub channel_id: i64,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct DmInfo {
+    pub channel_id: i64,
+    pub partner_id: i64,
+    pub partner_name: String,
+}
+
+/// Opens (or returns existing) DM channel between the caller and `with_user`.
+/// Idempotent: calling twice for the same pair returns the same channel_id.
+pub async fn open_dm(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<OpenDmRequest>,
+) -> Result<Json<OpenDmResponse>, (StatusCode, String)> {
+    let me = auth.user_id;
+    let them = req.with_user;
+
+    if me == them {
+        return Err((StatusCode::BAD_REQUEST, "cannot DM yourself".into()));
+    }
+
+    // Canonical order: smaller id first.
+    let (a, b) = if me < them { (me, them) } else { (them, me) };
+
+    // Check for existing DM channel.
+    let existing: Option<i64> = sqlx::query_scalar(
+        "SELECT channel_id FROM direct_messages WHERE user_a = $1 AND user_b = $2",
+    )
+    .bind(a)
+    .bind(b)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;
+
+    if let Some(channel_id) = existing {
+        // Ensure both are in the Redis membership set (handles reconnect/Redis flush).
+        seed_dm_membership(channel_id, me, them, &state.redis).await?;
+        return Ok(Json(OpenDmResponse { channel_id }));
+    }
+
+    // Create a backing channel row and the DM record atomically.
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;
+
+    let channel_id: i64 =
+        sqlx::query_scalar("INSERT INTO channels (name) VALUES ('dm') RETURNING id")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;
+
+    sqlx::query("INSERT INTO direct_messages (user_a, user_b, channel_id) VALUES ($1, $2, $3)")
+        .bind(a)
+        .bind(b)
+        .bind(channel_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;
+
+    tx.commit()
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;
+
+    seed_dm_membership(channel_id, me, them, &state.redis).await?;
+
+    Ok(Json(OpenDmResponse { channel_id }))
+}
+
+async fn seed_dm_membership(
+    channel_id: i64,
+    user_a: i64,
+    user_b: i64,
+    redis: &redis::aio::ConnectionManager,
+) -> Result<(), (StatusCode, String)> {
+    let mut con = redis.clone();
+    let key = format!("channel:{}:members", channel_id);
+    let _: (i64, i64) = redis::pipe()
+        .sadd(&key, user_a)
+        .sadd(&key, user_b)
+        .query_async(&mut con)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "redis error".into()))?;
+    Ok(())
+}
+
+/// Lists all DM conversations the caller is part of.
+pub async fn list_dms(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<DmInfo>>, StatusCode> {
+    let me = auth.user_id;
+    let dms = sqlx::query_as::<_, DmInfo>(
+        "SELECT
+             dm.channel_id,
+             CASE WHEN dm.user_a = $1 THEN dm.user_b ELSE dm.user_a END AS partner_id,
+             u.username AS partner_name
+         FROM direct_messages dm
+         JOIN users u ON u.id = CASE WHEN dm.user_a = $1 THEN dm.user_b ELSE dm.user_a END
+         WHERE dm.user_a = $1 OR dm.user_b = $1
+         ORDER BY dm.id DESC",
+    )
+    .bind(me)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(dms))
+}
