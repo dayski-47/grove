@@ -293,7 +293,7 @@ pub async fn handle_binary_message(
             const VALID: &[&str] = &["online", "away", "busy", "do_not_disturb"];
             let status = text.trim();
             if VALID.contains(&status) {
-                broadcast_presence(user_id, status, &state);
+                broadcast_presence(user_id, status, state);
             }
         }
 

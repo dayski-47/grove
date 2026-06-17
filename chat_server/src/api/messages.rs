@@ -58,9 +58,9 @@ pub struct CreateChannelResponse {
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct UserProfile {
-    pub id:        i64,
-    pub username:  String,
-    pub about:     String,
+    pub id: i64,
+    pub username: String,
+    pub about: String,
     pub last_seen: i64,
 }
 
