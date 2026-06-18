@@ -6,12 +6,14 @@ export function MessageInput({
     disabled,
     channelName = "",
     mentionUsers = [],
+    onEditLastMessage,
 }: {
-    onSend:         (text: string) => void;
-    onTyping?:      () => void;
-    disabled:       boolean;
-    channelName?:   string;
-    mentionUsers?:  { id: number; name: string }[];
+    onSend:                (text: string) => void;
+    onTyping?:             () => void;
+    disabled:              boolean;
+    channelName?:          string;
+    mentionUsers?:         { id: number; name: string }[];
+    onEditLastMessage?:    () => void;
 }) {
     const [text, setText]               = useState("");
     const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -84,6 +86,11 @@ export function MessageInput({
                 return;
             }
             if (e.key === "Escape") { setMentionQuery(null); return; }
+        }
+        if (e.key === "ArrowUp" && text === "" && onEditLastMessage) {
+            e.preventDefault();
+            onEditLastMessage();
+            return;
         }
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();

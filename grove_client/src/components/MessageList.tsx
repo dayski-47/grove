@@ -1,4 +1,14 @@
-import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+    forwardRef,
+    Fragment,
+    type ReactNode,
+    useEffect,
+    useImperativeHandle,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type KeyboardEvent,
+} from "react";
 
 export interface DisplayMessage {
     id?:       number;
@@ -7,6 +17,10 @@ export interface DisplayMessage {
     timestamp: number;
     edited?:   boolean;
     deleted?:  boolean;
+}
+
+export interface MessageListHandle {
+    startEdit: (id: number, text: string) => void;
 }
 
 type ReactionInfo = { count: number; byMe: boolean };
@@ -50,16 +64,58 @@ function sameDay(a: DisplayMessage, b: DisplayMessage): boolean {
     );
 }
 
-function renderWithMentions(text: string, myUsername: string): ReactNode {
-    const parts = text.split(/(@\w+)/g);
-    return parts.map((part, i) => {
-        if (!part.startsWith("@")) return part;
-        const isMe = part.slice(1).toLowerCase() === myUsername.toLowerCase();
-        return (
-            <span key={i} className={`dw-mention${isMe ? " me" : ""}`}>{part}</span>
-        );
-    });
+/* ── Inline markdown parser ──────────────────────────────── */
+
+type Check = { regex: RegExp; type: string };
+
+const CHECKS: Check[] = [
+    { regex: /\*\*(.+?)\*\*/s, type: "bold"    },
+    { regex: /~~(.+?)~~/s,     type: "strike"  },
+    { regex: /\*(.+?)\*/s,     type: "italic"  },
+    { regex: /`([^`\n]+)`/,   type: "code"    },
+    { regex: /@(\w+)/,         type: "mention" },
+    { regex: /\n/,             type: "newline" },
+];
+
+function parseMarkdown(text: string, myUsername: string): ReactNode[] {
+    const nodes: ReactNode[] = [];
+    let remaining = text;
+    let key = 0;
+
+    while (remaining.length > 0) {
+        let earliest: { index: number; type: string; match: RegExpExecArray } | null = null;
+
+        for (const { regex, type } of CHECKS) {
+            const m = regex.exec(remaining);
+            if (!m || m.index === undefined) continue;
+            if (!earliest || m.index < earliest.index) {
+                earliest = { index: m.index, type, match: m };
+            }
+        }
+
+        if (!earliest) { nodes.push(remaining); break; }
+
+        if (earliest.index > 0) nodes.push(remaining.slice(0, earliest.index));
+
+        const { type, match } = earliest;
+        if (type === "bold")    nodes.push(<strong key={key++}>{match[1]}</strong>);
+        else if (type === "strike")  nodes.push(<del key={key++}>{match[1]}</del>);
+        else if (type === "italic")  nodes.push(<em key={key++}>{match[1]}</em>);
+        else if (type === "code")    nodes.push(<code key={key++} className="dw-code-inline">{match[1]}</code>);
+        else if (type === "mention") {
+            const name = match[1];
+            const isMe = name.toLowerCase() === myUsername.toLowerCase();
+            nodes.push(<span key={key++} className={`dw-mention${isMe ? " me" : ""}`}>{match[0]}</span>);
+        }
+        else if (type === "newline") nodes.push(<br key={key++} />);
+
+        remaining = remaining.slice(earliest.index + match[0].length);
+    }
+
+    return nodes;
 }
+
+/* ── Message row ─────────────────────────────────────────── */
 
 interface MsgRowProps {
     m:             DisplayMessage;
@@ -97,11 +153,7 @@ function MsgRow({
         if (e.key === "Escape") onEditCancel();
     }
 
-    const rowClass = [
-        "dw-msg-row",
-        isCont ? "cont" : "",
-        isOwn  ? "own"  : "",
-    ].filter(Boolean).join(" ");
+    const rowClass = ["dw-msg-row", isCont ? "cont" : "", isOwn ? "own" : ""].filter(Boolean).join(" ");
 
     return (
         <div className={rowClass}>
@@ -123,11 +175,7 @@ function MsgRow({
             <div className="dw-msg-body">
                 {!isCont && (
                     <div className="dw-msg-meta">
-                        <button
-                            className={`dw-msg-author${isOwn ? " own" : ""}`}
-                            onClick={onUserClick}
-                            aria-label={`View ${name}'s profile`}
-                        >
+                        <button className={`dw-msg-author${isOwn ? " own" : ""}`} onClick={onUserClick} aria-label={`View ${name}'s profile`}>
                             {name}
                         </button>
                         <span className="dw-msg-time">{formatTime(m.timestamp)}</span>
@@ -151,7 +199,7 @@ function MsgRow({
                         </div>
                     ) : (
                         <span className="dw-msg-text">
-                            {renderWithMentions(m.text, myUsername)}
+                            {parseMarkdown(m.text, myUsername)}
                         </span>
                     )}
                     {m.edited && !m.deleted && !isEditing && (
@@ -178,12 +226,7 @@ function MsgRow({
                 {m.id !== undefined && !m.deleted && !isEditing && (
                     <div className="dw-emoji-pick" aria-label="Quick react">
                         {QUICK_EMOJIS.map(e => (
-                            <button
-                                key={e}
-                                className="dw-emoji-btn"
-                                title={`React ${e}`}
-                                onClick={() => onReact(m.id!, e)}
-                            >
+                            <button key={e} className="dw-emoji-btn" title={`React ${e}`} onClick={() => onReact(m.id!, e)}>
                                 {e}
                             </button>
                         ))}
@@ -191,25 +234,17 @@ function MsgRow({
                 )}
             </div>
 
-            {/* Action bar */}
             {m.id !== undefined && !m.deleted && !isEditing && (
                 <div className="dw-msg-actions" aria-label="Message actions">
                     {isOwn && (
                         <>
-                            <button
-                                className="dw-msg-action"
-                                title="Edit"
-                                onClick={() => onStartEdit(m.id!, m.text)}
-                                aria-label="Edit message"
-                            >
+                            <button className="dw-msg-action" title="Edit" onClick={() => onStartEdit(m.id!, m.text)} aria-label="Edit message">
                                 <EditIcon />
                             </button>
                             <button
                                 className="dw-msg-action danger"
                                 title="Delete"
-                                onClick={() => {
-                                    if (window.confirm("Delete this message?")) onDelete(m.id!);
-                                }}
+                                onClick={() => { if (window.confirm("Delete this message?")) onDelete(m.id!); }}
                                 aria-label="Delete message"
                             >
                                 <TrashIcon />
@@ -230,25 +265,9 @@ function MsgRow({
     );
 }
 
-export function MessageList({
-    messages,
-    currentUserId,
-    myUsername   = "",
-    usernames,
-    reactions    = {},
-    pinnedIds    = new Set(),
-    hasMore      = false,
-    loadingMore  = false,
-    scrollRef,
-    onScroll,
-    onLoadMore,
-    onReact,
-    onEdit,
-    onDelete,
-    onPin,
-    onUnpin,
-    onUserHover,
-}: {
+/* ── MessageList ─────────────────────────────────────────── */
+
+export const MessageList = forwardRef<MessageListHandle, {
     messages:      DisplayMessage[];
     currentUserId: number;
     myUsername?:   string;
@@ -266,7 +285,25 @@ export function MessageList({
     onPin?:        (messageId: number) => void;
     onUnpin?:      (messageId: number) => void;
     onUserHover?:  (userId: number, event: React.MouseEvent) => void;
-}) {
+}>(function MessageList({
+    messages,
+    currentUserId,
+    myUsername   = "",
+    usernames,
+    reactions    = {},
+    pinnedIds    = new Set(),
+    hasMore      = false,
+    loadingMore  = false,
+    scrollRef,
+    onScroll,
+    onLoadMore,
+    onReact,
+    onEdit,
+    onDelete,
+    onPin,
+    onUnpin,
+    onUserHover,
+}, ref) {
     const internalRef    = useRef<HTMLDivElement | null>(null);
     const listRef        = scrollRef ?? internalRef;
     const bottomRef      = useRef<HTMLDivElement | null>(null);
@@ -275,7 +312,6 @@ export function MessageList({
     const prevFirstIdRef = useRef<number | undefined>(undefined);
     const prevScrollHRef = useRef(0);
 
-    /* Latest-value refs so the IntersectionObserver (empty-deps effect) reads fresh values */
     const hasMoreRef    = useRef(hasMore);
     const loadingRef    = useRef(loadingMore);
     const onLoadMoreRef = useRef(onLoadMore);
@@ -286,17 +322,21 @@ export function MessageList({
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editText,  setEditText]  = useState("");
 
-    /* Auto-scroll to bottom on new messages — only when already near bottom */
+    useImperativeHandle(ref, () => ({
+        startEdit: (id: number, text: string) => {
+            setEditingId(id);
+            setEditText(text);
+        },
+    }));
+
+    /* Auto-scroll to bottom on new messages — only when near bottom */
     useEffect(() => {
         const last = messages[messages.length - 1];
-        if (!last) return;
-        if (last.timestamp === prevLastTsRef.current) return;
+        if (!last || last.timestamp === prevLastTsRef.current) return;
         prevLastTsRef.current = last.timestamp;
         const el = listRef.current;
         const nearBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 300;
-        if (nearBottom) {
-            bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-        }
+        if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
     /* Preserve scroll position when messages are prepended */
@@ -311,7 +351,7 @@ export function MessageList({
         prevScrollHRef.current = el.scrollHeight;
     }, [messages]);
 
-    /* IntersectionObserver on the top sentinel — auto-triggers load when scrolled to top */
+    /* IntersectionObserver on top sentinel — auto-triggers load on scroll to top */
     useEffect(() => {
         const sentinel = topSentinelRef.current;
         if (!sentinel) return;
@@ -335,18 +375,9 @@ export function MessageList({
     function cancelEdit() { setEditingId(null); }
 
     return (
-        <div
-            ref={listRef}
-            className="dw-messages"
-            role="log"
-            aria-live="polite"
-            aria-label="Messages"
-            onScroll={onScroll}
-        >
-            {/* Sentinel at the very top — triggers load when visible */}
+        <div ref={listRef} className="dw-messages" role="log" aria-live="polite" aria-label="Messages" onScroll={onScroll}>
             <div ref={topSentinelRef} aria-hidden="true" />
 
-            {/* Loading spinner */}
             {loadingMore && (
                 <div className="dw-load-more" aria-label="Loading earlier messages">
                     <span className="dw-load-dot" />
@@ -355,7 +386,6 @@ export function MessageList({
                 </div>
             )}
 
-            {/* Beginning of history */}
             {!hasMore && !loadingMore && messages.length > 0 && (
                 <div className="dw-history-start" aria-label="Beginning of conversation">
                     <div className="dw-history-start-line" />
@@ -365,14 +395,14 @@ export function MessageList({
             )}
 
             {messages.map((m, i) => {
-                const prev    = i > 0 ? messages[i - 1] : null;
-                const cont    = prev !== null && isContinuation(prev, m);
-                const newDay  = prev === null || !sameDay(prev, m);
-                const name    = usernames[m.userId] ?? `user ${m.userId}`;
-                const isOwn   = m.userId === currentUserId;
-                const key     = `${m.id ?? m.timestamp}-${m.userId}-${i}`;
-                const msgRx   = m.id !== undefined ? reactions[m.id] : undefined;
-                const pinned  = m.id !== undefined ? pinnedIds.has(m.id) : false;
+                const prev   = i > 0 ? messages[i - 1] : null;
+                const cont   = prev !== null && isContinuation(prev, m);
+                const newDay = prev === null || !sameDay(prev, m);
+                const name   = usernames[m.userId] ?? `user ${m.userId}`;
+                const isOwn  = m.userId === currentUserId;
+                const key    = `${m.id ?? m.timestamp}-${m.userId}-${i}`;
+                const msgRx  = m.id !== undefined ? reactions[m.id] : undefined;
+                const pinned = m.id !== undefined ? pinnedIds.has(m.id) : false;
 
                 return (
                     <Fragment key={key}>
@@ -382,15 +412,9 @@ export function MessageList({
                             </div>
                         )}
                         <MsgRow
-                            m={m}
-                            isOwn={isOwn}
-                            name={name}
-                            myUsername={myUsername}
-                            isCont={cont}
-                            isPinned={pinned}
-                            reactions={msgRx}
-                            editingId={editingId}
-                            editText={editText}
+                            m={m} isOwn={isOwn} name={name} myUsername={myUsername}
+                            isCont={cont} isPinned={pinned} reactions={msgRx}
+                            editingId={editingId} editText={editText}
                             onEditChange={setEditText}
                             onEditSubmit={submitEdit}
                             onEditCancel={cancelEdit}
@@ -407,7 +431,7 @@ export function MessageList({
             <div ref={bottomRef} />
         </div>
     );
-}
+});
 
 function EditIcon() {
     return (

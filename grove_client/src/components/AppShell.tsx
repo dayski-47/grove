@@ -4,7 +4,7 @@ import {
     getHistory, joinChannel, createChannel, listChannels,
     openDm, listDms, listFriends, addFriend, removeFriend,
     getChannelReactions, logout, getUserProfile,
-    getChannelPins, pinMessage, unpinMessage,
+    getChannelPins, pinMessage, unpinMessage, searchUsers,
 } from "../api";
 import {
     MessageType, type ParsedMessage, type SignalingMessage,
@@ -24,6 +24,16 @@ interface Channel { id: number; name: string; }
 
 type EmojiMap    = Record<string, { count: number; byMe: boolean }>;
 type ReactionsMap = Record<number, EmojiMap>;
+
+type Toast = {
+    id:          string;
+    channelId:   number;
+    channelName: string;
+    kind:        "channel" | "dm";
+    senderName:  string;
+    preview:     string;
+    leaving:     boolean;
+};
 
 const AVATAR_COLORS = [
     "#1a5e2a", "#1a4a7d", "#5e1a5e", "#7d3a1a",
@@ -83,6 +93,7 @@ export function AppShell({
     const [recentIds, setRecentIds]     = useState<number[]>([]);
     const [openTabs, setOpenTabs]       = useState<{ id: number; name: string; kind: "channel" | "dm" }[]>([]);
     const [notifOpen, setNotifOpen]     = useState(false);
+    const [toasts, setToasts]           = useState<Toast[]>([]);
 
     /* Profile / status */
     const [myStatus, setMyStatus] = useState<ActivityStatus>(
@@ -107,6 +118,10 @@ export function AppShell({
     /* Latest-value refs — updated inline each render for keyboard handler */
     const tabsForKeys   = useRef<{ id: number; name: string; kind: "channel" | "dm" }[]>([]);
     const activeForKeys = useRef<number | null>(null);
+    /* Latest-value refs for WS handler */
+    const channelsRef   = useRef<Channel[]>([]);
+    const dmsRef        = useRef<DmInfo[]>([]);
+    const usernamesRef  = useRef<Record<number, string>>({});
 
     /* ── Username / profile resolution ─────────────────── */
 
@@ -344,12 +359,37 @@ export function AppShell({
                         ],
                     }));
                     resolveUsername(msg.userId);
-                    setActiveCh(curr => {
-                        if (curr !== msg.channelId) {
-                            setUnread(u => ({ ...u, [msg.channelId]: (u[msg.channelId] ?? 0) + 1 }));
+                    const isBackground = activeForKeys.current !== msg.channelId;
+                    if (isBackground) {
+                        setUnread(u => ({ ...u, [msg.channelId]: (u[msg.channelId] ?? 0) + 1 }));
+                        if (msg.userId !== userId) {
+                            const inChannels = channelsRef.current.some(c => c.id === msg.channelId);
+                            const dmEntry    = dmsRef.current.find(d => d.channel_id === msg.channelId);
+                            const isDm       = !inChannels;
+                            const sender     = usernamesRef.current[msg.userId] ?? `user ${msg.userId}`;
+                            const chName     = channelsRef.current.find(c => c.id === msg.channelId)?.name
+                                ?? dmEntry?.partner_name
+                                ?? sender;
+                            if (isDm && !dmEntry) {
+                                listDms(token).then(list => {
+                                    setDms(list);
+                                    list.forEach(d => resolveUsername(d.partner_id, d.partner_name));
+                                }).catch(console.error);
+                            }
+                            const tid    = `${msg.channelId}-${msg.timestamp}`;
+                            setToasts(prev => {
+                                if (prev.length >= 4) return prev;
+                                if (prev.some(t => t.channelId === msg.channelId && !t.leaving)) return prev;
+                                return [...prev, {
+                                    id: tid, channelId: msg.channelId,
+                                    channelName: chName, kind: isDm ? "dm" : "channel",
+                                    senderName: sender, preview: msg.text.slice(0, 80),
+                                    leaving: false,
+                                }];
+                            });
+                            setTimeout(() => dismissToast(tid), 4000);
                         }
-                        return curr;
-                    });
+                    }
                 }
             },
             (isConn) => setConnected(isConn),
@@ -393,6 +433,7 @@ export function AppShell({
     /* ── Channel open ───────────────────────────────────── */
 
     async function openChannel(channelId: number, displayName: string, kind: "channel" | "dm" = "channel") {
+        dismissChannelToasts(channelId);
         setActiveCh(channelId);
         setActiveKind(kind);
         setActiveName(displayName);
@@ -466,6 +507,20 @@ export function AppShell({
         }
     }
 
+    function dismissToast(id: string) {
+        setToasts(prev => prev.map(t => t.id === id ? { ...t, leaving: true } : t));
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 220);
+    }
+
+    function dismissChannelToasts(channelId: number) {
+        setToasts(prev => {
+            const ids = prev.filter(t => t.channelId === channelId && !t.leaving).map(t => t.id);
+            if (ids.length === 0) return prev;
+            ids.forEach(id => setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 220));
+            return prev.map(t => t.channelId === channelId ? { ...t, leaving: true } : t);
+        });
+    }
+
     async function openDmWith(partnerId: number) {
         const existing = dms.find(d => d.partner_id === partnerId);
         if (existing) { openChannel(existing.channel_id, existing.partner_name, "dm"); return; }
@@ -488,10 +543,13 @@ export function AppShell({
     }
 
     async function handleAddFriend() {
-        const id = parseInt(addFriendId, 10);
-        if (isNaN(id)) return;
+        const username = addFriendId.trim();
+        if (!username) return;
         try {
-            await addFriend(id, token);
+            const results = await searchUsers(username, token);
+            const match = results.find(u => u.username.toLowerCase() === username.toLowerCase());
+            if (!match) return;
+            await addFriend(match.id, token);
             const updated = await listFriends(token);
             setFriends(updated);
             setAddFriendId("");
@@ -609,6 +667,9 @@ export function AppShell({
     /* Keep latest-value refs in sync (runs every render, before any effect) */
     tabsForKeys.current   = openTabs;
     activeForKeys.current = activeChannelId;
+    channelsRef.current   = channels;
+    dmsRef.current        = dms;
+    usernamesRef.current  = usernames;
 
     /* ── Derived values ─────────────────────────────────── */
 
@@ -919,6 +980,13 @@ export function AppShell({
             )}
 
             <audio id="grove-remote-audio" autoPlay style={{ display: "none" }} />
+
+            {/* ── Toast notifications ──────────────────── */}
+            <ToastContainer
+                toasts={toasts}
+                onDismiss={dismissToast}
+                onNavigate={(id, name, kind) => openChannel(id, name, kind)}
+            />
         </div>
     );
 }
@@ -1101,7 +1169,7 @@ function FriendsPage({
                     <div className="dw-add-bar">
                         <input
                             className="dw-add-input"
-                            placeholder="User ID (e.g. 42)"
+                            placeholder="Username"
                             value={addFriendId}
                             onChange={e => onAddFriendId(e.target.value)}
                             onKeyDown={e => e.key === "Enter" && onAddFriend()}
@@ -1307,8 +1375,8 @@ function NotifPanel({
             const id   = Number(idStr);
             const ch   = channels.find(c => c.id === id);
             const dm   = dms.find(d => d.channel_id === id);
-            const name = ch?.name ?? dm?.partner_name ?? `channel ${id}`;
-            const kind: "channel" | "dm" = dm ? "dm" : "channel";
+            const kind: "channel" | "dm" = ch ? "channel" : "dm";
+            const name = ch?.name ?? dm?.partner_name ?? (kind === "dm" ? "Direct message" : `channel ${id}`);
             return { id, name, kind, count };
         });
 
@@ -1347,6 +1415,36 @@ function BellIcon({ count }: { count: number }) {
                     {count > 99 ? "99+" : count}
                 </span>
             )}
+        </div>
+    );
+}
+
+function ToastContainer({ toasts, onDismiss, onNavigate }: {
+    toasts:     Toast[];
+    onDismiss:  (id: string) => void;
+    onNavigate: (channelId: number, name: string, kind: "channel" | "dm") => void;
+}) {
+    if (toasts.length === 0) return null;
+    return (
+        <div className="gv-toast-container" aria-live="polite" aria-label="Notifications">
+            {toasts.map(t => (
+                <div
+                    key={t.id}
+                    className={`gv-toast${t.leaving ? " leaving" : ""}`}
+                    onClick={() => onNavigate(t.channelId, t.channelName, t.kind)}
+                    role="alert"
+                >
+                    <div className="gv-toast-channel">{t.kind === "dm" ? "@" : "#"}{t.channelName}</div>
+                    <div className="gv-toast-sender">{t.senderName}</div>
+                    <div className="gv-toast-preview">{t.preview}</div>
+                    <button
+                        className="gv-toast-close"
+                        onClick={e => { e.stopPropagation(); onDismiss(t.id); }}
+                        aria-label="Dismiss"
+                    >×</button>
+                    <div className="gv-toast-bar" />
+                </div>
+            ))}
         </div>
     );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MessageList } from "./MessageList";
+import type { MessageListHandle } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import type { DisplayMessage } from "./MessageList";
 import type { PinnedMessage } from "../types";
@@ -44,9 +45,19 @@ export function ChatView({
     onUserClick,
 }: ChatViewProps) {
     const scrollRef        = useRef<HTMLDivElement | null>(null);
+    const messageListRef   = useRef<MessageListHandle>(null);
     const [showPill, setShowPill] = useState(false);
     const pinnedIds        = new Set(pins.map(p => p.message_id));
     const typingText       = buildTypingText(typingNames);
+
+    function handleEditLastMessage() {
+        const last = [...messages].reverse().find(
+            m => m.userId === currentUserId && !m.deleted && m.id !== undefined,
+        );
+        if (last?.id !== undefined) {
+            messageListRef.current?.startEdit(last.id, last.text);
+        }
+    }
 
     function handleScroll() {
         const el = scrollRef.current;
@@ -77,6 +88,7 @@ export function ChatView({
             {/* Messages — keyed by channelId so refs/state reset on channel switch */}
             <MessageList
                 key={channelId}
+                ref={messageListRef}
                 messages={messages}
                 currentUserId={currentUserId}
                 myUsername={myUsername}
@@ -117,6 +129,7 @@ export function ChatView({
                 disabled={!connected}
                 channelName={channelName}
                 mentionUsers={mentionUsers}
+                onEditLastMessage={handleEditLastMessage}
             />
 
             {/* Scroll-to-bottom pill */}
