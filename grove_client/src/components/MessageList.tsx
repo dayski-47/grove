@@ -1,5 +1,4 @@
-// src/components/MessageList.tsx
-import { Fragment, type ReactNode, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 
 export interface DisplayMessage {
     id?:       number;
@@ -10,42 +9,24 @@ export interface DisplayMessage {
     deleted?:  boolean;
 }
 
-type ReactionInfo    = { count: number; byMe: boolean };
-type ReactionsMap    = Record<number, Record<string, ReactionInfo>>;
+type ReactionInfo = { count: number; byMe: boolean };
+type ReactionsMap = Record<number, Record<string, ReactionInfo>>;
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
 
-function renderWithMentions(text: string, myUsername: string): ReactNode {
-    const parts = text.split(/(@\w+)/g);
-    return parts.map((part, i) => {
-        if (!part.startsWith("@")) return part;
-        const isMine = part.slice(1).toLowerCase() === myUsername.toLowerCase();
-        return (
-            <span key={i} className={`grove-mention${isMine ? " grove-mention-me" : ""}`}>
-                {part}
-            </span>
-        );
-    });
-}
-
 const AVATAR_COLORS = [
-    "#1a7fd4", "#2d8a3c", "#7b52c8", "#c07828",
-    "#1a9090", "#b03060", "#4a70b8", "#4a9060",
+    "#1a5e2a", "#1a4a7d", "#5e1a5e", "#7d3a1a",
+    "#1a6e6e", "#6e1a2a", "#2a4a7d", "#2a6e3a",
 ];
 
-function avatarColor(userId: number): string {
-    return AVATAR_COLORS[userId % AVATAR_COLORS.length];
+function avatarBg(uid: number): string {
+    return AVATAR_COLORS[uid % AVATAR_COLORS.length];
 }
 
-function initials(name: string): string {
-    return name.slice(0, 1).toUpperCase();
-}
+function initial(name: string): string { return name.slice(0, 1).toUpperCase(); }
 
 function formatTime(ts: number): string {
-    return new Date(ts * 1000).toLocaleTimeString([], {
-        hour:   "2-digit",
-        minute: "2-digit",
-    });
+    return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatDay(ts: number): string {
@@ -69,12 +50,23 @@ function sameDay(a: DisplayMessage, b: DisplayMessage): boolean {
     );
 }
 
-interface MsgBodyProps {
+function renderWithMentions(text: string, myUsername: string): ReactNode {
+    const parts = text.split(/(@\w+)/g);
+    return parts.map((part, i) => {
+        if (!part.startsWith("@")) return part;
+        const isMe = part.slice(1).toLowerCase() === myUsername.toLowerCase();
+        return (
+            <span key={i} className={`dw-mention${isMe ? " me" : ""}`}>{part}</span>
+        );
+    });
+}
+
+interface MsgRowProps {
     m:             DisplayMessage;
     isOwn:         boolean;
     name:          string;
     myUsername:    string;
-    showMeta:      boolean;
+    isCont:        boolean;
     isPinned:      boolean;
     reactions:     Record<string, ReactionInfo> | undefined;
     editingId:     number | null;
@@ -87,109 +79,151 @@ interface MsgBodyProps {
     onReact:       (id: number, emoji: string) => void;
     onPin:         (id: number) => void;
     onUnpin:       (id: number) => void;
+    onUserClick:   (event: React.MouseEvent) => void;
 }
 
-function MessageBody({
-    m, isOwn, name, myUsername, showMeta, isPinned,
+function MsgRow({
+    m, isOwn, name, myUsername, isCont, isPinned,
     reactions, editingId, editText,
     onEditChange, onEditSubmit, onEditCancel,
     onStartEdit, onDelete, onReact, onPin, onUnpin,
-}: MsgBodyProps) {
-    const msgReactions = reactions ? Object.entries(reactions) : [];
+    onUserClick,
+}: MsgRowProps) {
     const isEditing    = m.id !== undefined && editingId === m.id;
+    const msgReactions = reactions ? Object.entries(reactions) : [];
 
-    const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter") { e.preventDefault(); onEditSubmit(); }
+    function handleEditKey(e: KeyboardEvent<HTMLInputElement>) {
+        if (e.key === "Enter")  { e.preventDefault(); onEditSubmit(); }
         if (e.key === "Escape") onEditCancel();
-    };
+    }
+
+    const rowClass = [
+        "dw-msg-row",
+        isCont ? "cont" : "",
+        isOwn  ? "own"  : "",
+    ].filter(Boolean).join(" ");
 
     return (
-        <div className="grove-msg-content-wrap">
-            {showMeta && (
-                <div className="grove-msg-meta">
-                    <span className={`grove-msg-author${isOwn ? " own" : ""}`}>{name}</span>
+        <div className={rowClass}>
+            {isCont ? (
+                <div className="dw-cont-space" aria-hidden="true">
+                    <span className="dw-cont-time">{formatTime(m.timestamp)}</span>
                 </div>
+            ) : (
+                <button
+                    className="dw-msg-avatar"
+                    style={{ background: avatarBg(m.userId) }}
+                    onClick={onUserClick}
+                    aria-label={`View ${name}'s profile`}
+                >
+                    {initial(name)}
+                </button>
             )}
 
-            <div className="grove-msg-text-row">
-                {m.deleted ? (
-                    <span className="grove-msg-deleted">[message deleted]</span>
-                ) : isEditing ? (
-                    <div className="grove-msg-edit-wrap">
-                        <input
-                            className="grove-msg-edit-input"
-                            value={editText}
-                            onChange={e => onEditChange(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            autoFocus
-                        />
-                        <span className="grove-edit-hint">Enter to save · Esc to cancel</span>
+            <div className="dw-msg-body">
+                {!isCont && (
+                    <div className="dw-msg-meta">
+                        <button
+                            className={`dw-msg-author${isOwn ? " own" : ""}`}
+                            onClick={onUserClick}
+                            aria-label={`View ${name}'s profile`}
+                        >
+                            {name}
+                        </button>
+                        <span className="dw-msg-time">{formatTime(m.timestamp)}</span>
                     </div>
-                ) : (
-                    <span className="grove-msg-text">
-                        {renderWithMentions(m.text, myUsername)}
-                    </span>
                 )}
-                {m.edited && !m.deleted && !isEditing && (
-                    <span className="grove-edit-tag">(edited)</span>
+
+                <div>
+                    {m.deleted ? (
+                        <span className="dw-msg-deleted">message deleted</span>
+                    ) : isEditing ? (
+                        <div className="dw-edit-wrap">
+                            <input
+                                className="dw-edit-input"
+                                value={editText}
+                                onChange={e => onEditChange(e.target.value)}
+                                onKeyDown={handleEditKey}
+                                autoFocus
+                                aria-label="Edit message"
+                            />
+                            <span className="dw-edit-hint">Enter to save · Esc to cancel</span>
+                        </div>
+                    ) : (
+                        <span className="dw-msg-text">
+                            {renderWithMentions(m.text, myUsername)}
+                        </span>
+                    )}
+                    {m.edited && !m.deleted && !isEditing && (
+                        <span className="dw-msg-edited-tag">(edited)</span>
+                    )}
+                </div>
+
+                {msgReactions.length > 0 && (
+                    <div className="dw-reactions" aria-label="Reactions">
+                        {msgReactions.map(([emoji, info]) => (
+                            <button
+                                key={emoji}
+                                className={`dw-reaction${info.byMe ? " mine" : ""}`}
+                                onClick={() => m.id !== undefined && onReact(m.id, emoji)}
+                                title={info.byMe ? `You reacted ${emoji}` : `React with ${emoji}`}
+                            >
+                                {emoji}
+                                <span className="dw-reaction-count">{info.count}</span>
+                            </button>
+                        ))}
+                    </div>
                 )}
 
                 {m.id !== undefined && !m.deleted && !isEditing && (
-                    <div className="grove-msg-actions" aria-label="Message actions">
-                        {isOwn && (
-                            <>
-                                <button
-                                    className="grove-msg-action-btn"
-                                    title="Edit message"
-                                    onClick={() => onStartEdit(m.id!, m.text)}
-                                >✏️</button>
-                                <button
-                                    className="grove-msg-action-btn grove-msg-action-delete"
-                                    title="Delete message"
-                                    onClick={() => {
-                                        if (window.confirm("Delete this message?")) {
-                                            onDelete(m.id!);
-                                        }
-                                    }}
-                                >🗑️</button>
-                            </>
-                        )}
-                        <button
-                            className={`grove-msg-action-btn${isPinned ? " grove-msg-action-pinned" : ""}`}
-                            title={isPinned ? "Unpin message" : "Pin message"}
-                            onClick={() => isPinned ? onUnpin(m.id!) : onPin(m.id!)}
-                        >📌</button>
+                    <div className="dw-emoji-pick" aria-label="Quick react">
+                        {QUICK_EMOJIS.map(e => (
+                            <button
+                                key={e}
+                                className="dw-emoji-btn"
+                                title={`React ${e}`}
+                                onClick={() => onReact(m.id!, e)}
+                            >
+                                {e}
+                            </button>
+                        ))}
                     </div>
                 )}
             </div>
 
-            {msgReactions.length > 0 && (
-                <div className="grove-reactions" aria-label="Reactions">
-                    {msgReactions.map(([emoji, info]) => (
-                        <button
-                            key={emoji}
-                            className={`grove-reaction-badge${info.byMe ? " active" : ""}`}
-                            title={info.byMe ? `You reacted ${emoji}` : `React with ${emoji}`}
-                            onClick={() => m.id !== undefined && onReact(m.id, emoji)}
-                        >
-                            {emoji} <span className="grove-reaction-count">{info.count}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
-
-            {m.id !== undefined && !m.deleted && (
-                <div className="grove-reaction-picker" aria-label="Add reaction">
-                    {QUICK_EMOJIS.map(emoji => (
-                        <button
-                            key={emoji}
-                            className="grove-reaction-pick-btn"
-                            title={`React with ${emoji}`}
-                            onClick={() => onReact(m.id!, emoji)}
-                        >
-                            {emoji}
-                        </button>
-                    ))}
+            {/* Action bar */}
+            {m.id !== undefined && !m.deleted && !isEditing && (
+                <div className="dw-msg-actions" aria-label="Message actions">
+                    {isOwn && (
+                        <>
+                            <button
+                                className="dw-msg-action"
+                                title="Edit"
+                                onClick={() => onStartEdit(m.id!, m.text)}
+                                aria-label="Edit message"
+                            >
+                                <EditIcon />
+                            </button>
+                            <button
+                                className="dw-msg-action danger"
+                                title="Delete"
+                                onClick={() => {
+                                    if (window.confirm("Delete this message?")) onDelete(m.id!);
+                                }}
+                                aria-label="Delete message"
+                            >
+                                <TrashIcon />
+                            </button>
+                        </>
+                    )}
+                    <button
+                        className={`dw-msg-action${isPinned ? " active" : ""}`}
+                        title={isPinned ? "Unpin" : "Pin"}
+                        onClick={() => isPinned ? onUnpin(m.id!) : onPin(m.id!)}
+                        aria-label={isPinned ? "Unpin message" : "Pin message"}
+                    >
+                        <PinIcon />
+                    </button>
                 </div>
             )}
         </div>
@@ -199,12 +233,12 @@ function MessageBody({
 export function MessageList({
     messages,
     currentUserId,
-    myUsername    = "",
+    myUsername   = "",
     usernames,
-    reactions     = {},
-    pinnedIds     = new Set(),
-    hasMore       = false,
-    loadingMore   = false,
+    reactions    = {},
+    pinnedIds    = new Set(),
+    hasMore      = false,
+    loadingMore  = false,
     scrollRef,
     onScroll,
     onLoadMore,
@@ -215,149 +249,188 @@ export function MessageList({
     onUnpin,
     onUserHover,
 }: {
-    messages:       DisplayMessage[];
-    currentUserId:  number;
-    myUsername?:    string;
-    usernames:      Record<number, string>;
-    reactions?:     ReactionsMap;
-    pinnedIds?:     Set<number>;
-    hasMore?:       boolean;
-    loadingMore?:   boolean;
-    scrollRef?:     React.RefObject<HTMLDivElement | null>;
-    onScroll?:      () => void;
-    onLoadMore?:    () => void;
-    onReact?:       (messageId: number, emoji: string) => void;
-    onEdit?:        (messageId: number, newText: string) => void;
-    onDelete?:      (messageId: number) => void;
-    onPin?:         (messageId: number) => void;
-    onUnpin?:       (messageId: number) => void;
-    onUserHover?:   (userId: number, event: React.MouseEvent) => void;
+    messages:      DisplayMessage[];
+    currentUserId: number;
+    myUsername?:   string;
+    usernames:     Record<number, string>;
+    reactions?:    ReactionsMap;
+    pinnedIds?:    Set<number>;
+    hasMore?:      boolean;
+    loadingMore?:  boolean;
+    scrollRef?:    React.RefObject<HTMLDivElement | null>;
+    onScroll?:     () => void;
+    onLoadMore?:   () => void;
+    onReact?:      (messageId: number, emoji: string) => void;
+    onEdit?:       (messageId: number, newText: string) => void;
+    onDelete?:     (messageId: number) => void;
+    onPin?:        (messageId: number) => void;
+    onUnpin?:      (messageId: number) => void;
+    onUserHover?:  (userId: number, event: React.MouseEvent) => void;
 }) {
     const internalRef    = useRef<HTMLDivElement | null>(null);
     const listRef        = scrollRef ?? internalRef;
     const bottomRef      = useRef<HTMLDivElement | null>(null);
+    const topSentinelRef = useRef<HTMLDivElement | null>(null);
     const prevLastTsRef  = useRef<number | null>(null);
-    const [editingId,   setEditingId]   = useState<number | null>(null);
-    const [editText,    setEditText]    = useState("");
+    const prevFirstIdRef = useRef<number | undefined>(undefined);
+    const prevScrollHRef = useRef(0);
 
+    /* Latest-value refs so the IntersectionObserver (empty-deps effect) reads fresh values */
+    const hasMoreRef    = useRef(hasMore);
+    const loadingRef    = useRef(loadingMore);
+    const onLoadMoreRef = useRef(onLoadMore);
+    hasMoreRef.current    = hasMore;
+    loadingRef.current    = loadingMore;
+    onLoadMoreRef.current = onLoadMore;
+
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [editText,  setEditText]  = useState("");
+
+    /* Auto-scroll to bottom on new messages — only when already near bottom */
     useEffect(() => {
         const last = messages[messages.length - 1];
         if (!last) return;
-        if (last.timestamp !== prevLastTsRef.current) {
-            prevLastTsRef.current = last.timestamp;
+        if (last.timestamp === prevLastTsRef.current) return;
+        prevLastTsRef.current = last.timestamp;
+        const el = listRef.current;
+        const nearBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 300;
+        if (nearBottom) {
             bottomRef.current?.scrollIntoView({ behavior: "smooth" });
         }
     }, [messages]);
 
-    const handleStartEdit = (id: number, text: string) => {
-        setEditingId(id);
-        setEditText(text);
-    };
-    const handleEditSubmit = () => {
-        if (editingId !== null && editText.trim()) {
-            onEdit?.(editingId, editText.trim());
+    /* Preserve scroll position when messages are prepended */
+    useLayoutEffect(() => {
+        const el = listRef.current;
+        if (!el) return;
+        const firstId = messages[0]?.id;
+        if (prevFirstIdRef.current !== undefined && firstId !== prevFirstIdRef.current) {
+            el.scrollTop += el.scrollHeight - prevScrollHRef.current;
         }
+        prevFirstIdRef.current = firstId;
+        prevScrollHRef.current = el.scrollHeight;
+    }, [messages]);
+
+    /* IntersectionObserver on the top sentinel — auto-triggers load when scrolled to top */
+    useEffect(() => {
+        const sentinel = topSentinelRef.current;
+        if (!sentinel) return;
+        const observer = new IntersectionObserver(
+            entries => {
+                if (entries[0].isIntersecting && hasMoreRef.current && !loadingRef.current) {
+                    onLoadMoreRef.current?.();
+                }
+            },
+            { threshold: 0 },
+        );
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, []);
+
+    function startEdit(id: number, text: string) { setEditingId(id); setEditText(text); }
+    function submitEdit() {
+        if (editingId !== null && editText.trim()) onEdit?.(editingId, editText.trim());
         setEditingId(null);
-    };
-    const handleEditCancel = () => setEditingId(null);
+    }
+    function cancelEdit() { setEditingId(null); }
 
     return (
         <div
             ref={listRef}
-            className="grove-messages"
+            className="dw-messages"
             role="log"
             aria-live="polite"
             aria-label="Messages"
             onScroll={onScroll}
         >
-            {(hasMore || loadingMore) && (
-                <div className="grove-load-more">
-                    <button
-                        className="grove-load-more-btn"
-                        onClick={onLoadMore}
-                        disabled={loadingMore}
-                        aria-label="Load earlier messages"
-                    >
-                        {loadingMore ? "Loading…" : "↑ Load earlier messages"}
-                    </button>
+            {/* Sentinel at the very top — triggers load when visible */}
+            <div ref={topSentinelRef} aria-hidden="true" />
+
+            {/* Loading spinner */}
+            {loadingMore && (
+                <div className="dw-load-more" aria-label="Loading earlier messages">
+                    <span className="dw-load-dot" />
+                    <span className="dw-load-dot" />
+                    <span className="dw-load-dot" />
+                </div>
+            )}
+
+            {/* Beginning of history */}
+            {!hasMore && !loadingMore && messages.length > 0 && (
+                <div className="dw-history-start" aria-label="Beginning of conversation">
+                    <div className="dw-history-start-line" />
+                    <span>beginning of history</span>
+                    <div className="dw-history-start-line" />
                 </div>
             )}
 
             {messages.map((m, i) => {
-                const prev   = i > 0 ? messages[i - 1] : null;
-                const cont   = prev !== null && isContinuation(prev, m);
-                const newDay = prev === null || !sameDay(prev, m);
-                const name   = usernames[m.userId] ?? `user ${m.userId}`;
-                const isOwn  = m.userId === currentUserId;
-                const key          = `${m.id ?? m.timestamp}-${m.userId}-${i}`;
-                const msgReactions = m.id !== undefined ? reactions[m.id] : undefined;
-                const isPinned     = m.id !== undefined ? pinnedIds.has(m.id) : false;
-
-                const bodyProps: MsgBodyProps = {
-                    m,
-                    isOwn,
-                    name,
-                    myUsername,
-                    showMeta:     !cont,
-                    isPinned,
-                    reactions:    msgReactions,
-                    editingId,
-                    editText,
-                    onEditChange: setEditText,
-                    onEditSubmit: handleEditSubmit,
-                    onEditCancel: handleEditCancel,
-                    onStartEdit:  handleStartEdit,
-                    onDelete:     (id) => onDelete?.(id),
-                    onReact:      (id, emoji) => onReact?.(id, emoji),
-                    onPin:        (id) => onPin?.(id),
-                    onUnpin:      (id) => onUnpin?.(id),
-                };
+                const prev    = i > 0 ? messages[i - 1] : null;
+                const cont    = prev !== null && isContinuation(prev, m);
+                const newDay  = prev === null || !sameDay(prev, m);
+                const name    = usernames[m.userId] ?? `user ${m.userId}`;
+                const isOwn   = m.userId === currentUserId;
+                const key     = `${m.id ?? m.timestamp}-${m.userId}-${i}`;
+                const msgRx   = m.id !== undefined ? reactions[m.id] : undefined;
+                const pinned  = m.id !== undefined ? pinnedIds.has(m.id) : false;
 
                 return (
                     <Fragment key={key}>
                         {newDay && (
-                            <div className="grove-day-divider" role="separator">
-                                <span className="grove-day-label">{formatDay(m.timestamp)}</span>
+                            <div className="dw-day-divider" role="separator">
+                                <span className="dw-day-label">{formatDay(m.timestamp)}</span>
                             </div>
                         )}
-                        {cont ? (
-                            <div className="grove-msg-row grove-cont">
-                                <div className="grove-cont-spacer" aria-hidden="true">
-                                    <span className="grove-cont-time">{formatTime(m.timestamp)}</span>
-                                </div>
-                                <MessageBody {...bodyProps} />
-                            </div>
-                        ) : (
-                            <div className="grove-msg-row">
-                                <button
-                                    className="grove-avatar grove-avatar-btn"
-                                    style={{ background: avatarColor(m.userId) }}
-                                    onClick={e => onUserHover?.(m.userId, e)}
-                                    aria-label={`View ${name}'s profile`}
-                                >
-                                    {initials(name)}
-                                </button>
-                                <div className="grove-msg-body">
-                                    <div className="grove-msg-meta-row">
-                                        <button
-                                            className={`grove-msg-author grove-author-btn${isOwn ? " own" : ""}`}
-                                            onClick={e => onUserHover?.(m.userId, e)}
-                                            aria-label={`View ${name}'s profile`}
-                                        >
-                                            {name}
-                                        </button>
-                                        <span className="grove-msg-timestamp">
-                                            {formatTime(m.timestamp)}
-                                        </span>
-                                    </div>
-                                    <MessageBody {...bodyProps} showMeta={false} />
-                                </div>
-                            </div>
-                        )}
+                        <MsgRow
+                            m={m}
+                            isOwn={isOwn}
+                            name={name}
+                            myUsername={myUsername}
+                            isCont={cont}
+                            isPinned={pinned}
+                            reactions={msgRx}
+                            editingId={editingId}
+                            editText={editText}
+                            onEditChange={setEditText}
+                            onEditSubmit={submitEdit}
+                            onEditCancel={cancelEdit}
+                            onStartEdit={startEdit}
+                            onDelete={id => onDelete?.(id)}
+                            onReact={(id, emoji) => onReact?.(id, emoji)}
+                            onPin={id => onPin?.(id)}
+                            onUnpin={id => onUnpin?.(id)}
+                            onUserClick={e => onUserHover?.(m.userId, e)}
+                        />
                     </Fragment>
                 );
             })}
             <div ref={bottomRef} />
         </div>
+    );
+}
+
+function EditIcon() {
+    return (
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+    );
+}
+
+function TrashIcon() {
+    return (
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        </svg>
+    );
+}
+
+function PinIcon() {
+    return (
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17z"/>
+        </svg>
     );
 }

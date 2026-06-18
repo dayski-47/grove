@@ -1,38 +1,47 @@
-// src/components/MessageInput.tsx
 import { useEffect, useRef, useState } from "react";
 
 export function MessageInput({
     onSend,
     onTyping,
     disabled,
+    channelName = "",
     mentionUsers = [],
 }: {
-    onSend:        (text: string) => void;
-    onTyping?:     () => void;
-    disabled:      boolean;
-    mentionUsers?: { id: number; name: string }[];
+    onSend:         (text: string) => void;
+    onTyping?:      () => void;
+    disabled:       boolean;
+    channelName?:   string;
+    mentionUsers?:  { id: number; name: string }[];
 }) {
     const [text, setText]               = useState("");
     const [mentionQuery, setMentionQuery] = useState<string | null>(null);
     const [mentionIndex, setMentionIndex] = useState(0);
     const lastTypingSent                = useRef(0);
-    const inputRef                      = useRef<HTMLInputElement>(null);
+    const inputRef                      = useRef<HTMLTextAreaElement>(null);
 
     const suggestions = mentionQuery !== null
         ? mentionUsers.filter(u => u.name.toLowerCase().startsWith(mentionQuery.toLowerCase())).slice(0, 6)
         : [];
 
+    const hasText = text.trim().length > 0;
+
     function submit() {
         const trimmed = text.trim();
-        if (!trimmed) return;
+        if (!trimmed || disabled) return;
         onSend(trimmed);
         setText("");
         setMentionQuery(null);
+        // Reset textarea height
+        if (inputRef.current) inputRef.current.style.height = "auto";
     }
 
-    function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
         const val = e.target.value;
         setText(val);
+
+        // Auto-grow
+        const el = inputRef.current;
+        if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }
 
         // Throttle typing indicator
         const now = Date.now();
@@ -41,7 +50,7 @@ export function MessageInput({
             onTyping();
         }
 
-        // Detect @mention trigger
+        // Detect @mention
         const cursor = e.target.selectionStart ?? val.length;
         const before = val.slice(0, cursor);
         const match  = before.match(/@(\w*)$/);
@@ -58,95 +67,97 @@ export function MessageInput({
         const before   = text.slice(0, cursor);
         const after    = text.slice(cursor);
         const replaced = before.replace(/@(\w*)$/, `@${name} `);
-        const next     = replaced + after;
-        setText(next);
+        setText(replaced + after);
         setMentionQuery(null);
         inputRef.current?.focus();
-        // Move cursor to after the inserted mention
         const newPos = replaced.length;
         setTimeout(() => inputRef.current?.setSelectionRange(newPos, newPos), 0);
     }
 
-    function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
         if (suggestions.length > 0) {
-            if (e.key === "ArrowDown") {
+            if (e.key === "ArrowDown")  { e.preventDefault(); setMentionIndex(i => (i + 1) % suggestions.length); return; }
+            if (e.key === "ArrowUp")    { e.preventDefault(); setMentionIndex(i => (i - 1 + suggestions.length) % suggestions.length); return; }
+            if ((e.key === "Tab" || e.key === "Enter") && suggestions[mentionIndex]) {
                 e.preventDefault();
-                setMentionIndex(i => (i + 1) % suggestions.length);
+                completeMention(suggestions[mentionIndex].name);
                 return;
             }
-            if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setMentionIndex(i => (i - 1 + suggestions.length) % suggestions.length);
-                return;
-            }
-            if (e.key === "Tab" || e.key === "Enter") {
-                if (suggestions[mentionIndex]) {
-                    e.preventDefault();
-                    completeMention(suggestions[mentionIndex].name);
-                    return;
-                }
-            }
-            if (e.key === "Escape") {
-                setMentionQuery(null);
-                return;
-            }
+            if (e.key === "Escape") { setMentionQuery(null); return; }
         }
-        if (e.key === "Enter") submit();
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+        }
     }
 
-    // Close mention list on outside click
     useEffect(() => {
         if (mentionQuery === null) return;
         function onDown(e: MouseEvent) {
-            if (!(e.target as Element).closest(".grove-mention-dropdown")) {
-                setMentionQuery(null);
-            }
+            if (!(e.target as Element).closest(".dw-mention-list")) setMentionQuery(null);
         }
         document.addEventListener("mousedown", onDown);
         return () => document.removeEventListener("mousedown", onDown);
     }, [mentionQuery]);
 
+    const placeholder = disabled
+        ? "connecting…"
+        : channelName
+        ? `Message #${channelName}`
+        : "Message…";
+
     return (
-        <div className="grove-input-bar">
-            {/* @mention autocomplete */}
+        <div className="dw-input-area">
             {suggestions.length > 0 && (
-                <div className="grove-mention-dropdown" role="listbox" aria-label="Mention suggestions">
+                <div className="dw-mention-list" role="listbox" aria-label="Mention suggestions">
                     {suggestions.map((u, i) => (
                         <button
                             key={u.id}
-                            className={`grove-mention-option${i === mentionIndex ? " active" : ""}`}
+                            className={`dw-mention-opt${i === mentionIndex ? " active" : ""}`}
                             role="option"
                             aria-selected={i === mentionIndex}
                             onMouseDown={e => { e.preventDefault(); completeMention(u.name); }}
                         >
-                            <span className="grove-mention-option-at">@</span>
+                            <span className="dw-mention-at">@</span>
                             {u.name}
                         </button>
                     ))}
                 </div>
             )}
 
-            <div className="grove-input-bar-inner">
-                <input
+            <div className={`dw-input-box${disabled ? " offline" : ""}`}>
+                <textarea
                     ref={inputRef}
-                    className="grove-message-field"
-                    placeholder={disabled ? "connecting…" : "say something… (@mention someone)"}
+                    className="dw-text-input"
+                    placeholder={placeholder}
                     value={text}
                     disabled={disabled}
+                    rows={1}
                     aria-label="Message input"
+                    aria-multiline="true"
                     onChange={handleChange}
                     onKeyDown={handleKeyDown}
                     autoComplete="off"
                 />
                 <button
-                    className="grove-send"
+                    className={`dw-send-btn${hasText ? " show" : ""}`}
                     onClick={submit}
-                    disabled={disabled}
+                    disabled={disabled || !hasText}
                     aria-label="Send message"
+                    tabIndex={hasText ? 0 : -1}
                 >
-                    Send
+                    <SendIcon />
                 </button>
             </div>
         </div>
+    );
+}
+
+function SendIcon() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
     );
 }

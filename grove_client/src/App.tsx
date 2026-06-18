@@ -1,9 +1,8 @@
-// src/App.tsx
 import { useState } from "react";
 import { LoginScreen } from "./components/LoginScreen";
-import { HomeScreen } from "./components/HomeScreen";
+import { AppShell } from "./components/AppShell";
 import { isLoggedIn, getToken, getUserId, clearSession } from "./auth";
-import "./styles/grove.css";
+import "./styles/darkwood.css";
 
 export default function App() {
     const [loggedIn, setLoggedIn] = useState(isLoggedIn());
@@ -13,7 +12,7 @@ export default function App() {
     }
 
     return (
-        <HomeScreen
+        <AppShell
             token={getToken()!}
             userId={getUserId()!}
             onLogout={() => {

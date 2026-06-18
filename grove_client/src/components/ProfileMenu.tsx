@@ -1,20 +1,20 @@
 // src/components/ProfileMenu.tsx
 import { useEffect, useRef, useState } from "react";
 
-export type ActivityStatus = "online" | "away" | "busy" | "do_not_disturb";
+export type ActivityStatus = "online" | "idle" | "dnd" | "offline";
 
 const STATUS_LABELS: Record<ActivityStatus, string> = {
-    online:           "Online",
-    away:             "Away",
-    busy:             "Busy",
-    do_not_disturb:   "Do Not Disturb",
+    online:  "Online",
+    idle:    "Idle",
+    dnd:     "Do Not Disturb",
+    offline: "Appear Offline",
 };
 
 const STATUS_COLORS: Record<ActivityStatus, string> = {
-    online:           "#4caf50",
-    away:             "#f5a623",
-    busy:             "#e53935",
-    do_not_disturb:   "#9e9e9e",
+    online:  "#6ab870",
+    idle:    "#a08030",
+    dnd:     "#c15050",
+    offline: "#3d5240",
 };
 
 // Fan upward from the avatar — angles measured clockwise from "up" (0° = straight up).
