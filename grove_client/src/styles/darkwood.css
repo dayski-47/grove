@@ -793,7 +793,7 @@ input, textarea {
 .dw-msg-row:hover .dw-cont-time { opacity: 1; }
 .dw-msg-row.own .dw-cont-space { justify-content: flex-start; }
 
-.dw-msg-body { flex: 1; min-width: 0; max-width: 70%; }
+.dw-msg-body { flex: 0 1 auto; min-width: 0; max-width: 70%; }
 
 .dw-msg-meta {
   display: flex;
