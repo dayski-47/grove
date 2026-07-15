@@ -740,7 +740,7 @@ input, textarea {
 }
 
 .dw-msg-row:hover { background: rgba(255,255,255,0.015); }
-.dw-msg-row.own   { background: rgba(106,184,112,0.018); }
+.dw-msg-row.own   { background: rgba(106,184,112,0.018); flex-direction: row-reverse; }
 .dw-msg-row.own:hover { background: rgba(106,184,112,0.03); }
 
 /* Continuation row */
@@ -791,8 +791,9 @@ input, textarea {
 }
 
 .dw-msg-row:hover .dw-cont-time { opacity: 1; }
+.dw-msg-row.own .dw-cont-space { justify-content: flex-start; }
 
-.dw-msg-body { flex: 1; min-width: 0; }
+.dw-msg-body { flex: 1; min-width: 0; max-width: 70%; }
 
 .dw-msg-meta {
   display: flex;
@@ -800,6 +801,8 @@ input, textarea {
   gap: var(--sp-2);
   margin-bottom: 2px;
 }
+
+.dw-msg-row.own .dw-msg-meta { justify-content: flex-end; }
 
 .dw-msg-author {
   font-size: var(--text-sm);
@@ -811,7 +814,6 @@ input, textarea {
 }
 
 .dw-msg-author:hover { color: var(--leaf-bright); }
-.dw-msg-author.own   { color: var(--leaf); }
 
 .dw-msg-time {
   font-size: 10px;

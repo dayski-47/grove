@@ -7,11 +7,9 @@ import {
     useRef,
     useState,
 } from "react";
-import {
-    avatarBg, formatTime, initial, type ReactionInfo, type ReactionsMap,
-} from "./MessageRow/shared";
-import { MessageActions } from "./MessageRow/MessageActions";
-import { MessageBody } from "./MessageRow/MessageBody";
+import { type ReactionsMap } from "./MessageRow/shared";
+import { IncomingRow } from "./MessageRow/IncomingRow";
+import { OutgoingRow } from "./MessageRow/OutgoingRow";
 
 export interface DisplayMessage {
     id?:       number;
@@ -44,89 +42,6 @@ function sameDay(a: DisplayMessage, b: DisplayMessage): boolean {
     return (
         new Date(a.timestamp * 1000).toDateString() ===
         new Date(b.timestamp * 1000).toDateString()
-    );
-}
-
-/* ── Message row ─────────────────────────────────────────── */
-
-interface MsgRowProps {
-    m:             DisplayMessage;
-    isOwn:         boolean;
-    name:          string;
-    myUsername:    string;
-    isCont:        boolean;
-    isPinned:      boolean;
-    reactions:     Record<string, ReactionInfo> | undefined;
-    editingId:     number | null;
-    editText:      string;
-    onEditChange:  (t: string) => void;
-    onEditSubmit:  () => void;
-    onEditCancel:  () => void;
-    onStartEdit:   (id: number, text: string) => void;
-    onDelete:      (id: number) => void;
-    onReact:       (id: number, emoji: string) => void;
-    onPin:         (id: number) => void;
-    onUnpin:       (id: number) => void;
-    onUserClick:   (event: React.MouseEvent) => void;
-}
-
-function MsgRow({
-    m, isOwn, name, myUsername, isCont, isPinned,
-    reactions, editingId, editText,
-    onEditChange, onEditSubmit, onEditCancel,
-    onStartEdit, onDelete, onReact, onPin, onUnpin,
-    onUserClick,
-}: MsgRowProps) {
-    const isEditing = m.id !== undefined && editingId === m.id;
-
-    const rowClass = ["dw-msg-row", isCont ? "cont" : "", isOwn ? "own" : ""].filter(Boolean).join(" ");
-
-    return (
-        <div className={rowClass}>
-            {isCont ? (
-                <div className="dw-cont-space" aria-hidden="true">
-                    <span className="dw-cont-time">{formatTime(m.timestamp)}</span>
-                </div>
-            ) : (
-                <button
-                    className="dw-msg-avatar"
-                    style={{ background: avatarBg(m.userId) }}
-                    onClick={onUserClick}
-                    aria-label={`View ${name}'s profile`}
-                >
-                    {initial(name)}
-                </button>
-            )}
-
-            <div className="dw-msg-body">
-                {!isCont && (
-                    <div className="dw-msg-meta">
-                        <button className={`dw-msg-author${isOwn ? " own" : ""}`} onClick={onUserClick} aria-label={`View ${name}'s profile`}>
-                            {name}
-                        </button>
-                        <span className="dw-msg-time">{formatTime(m.timestamp)}</span>
-                    </div>
-                )}
-
-                <MessageBody
-                    m={m} myUsername={myUsername} isEditing={isEditing} editText={editText}
-                    onEditChange={onEditChange} onEditSubmit={onEditSubmit} onEditCancel={onEditCancel}
-                    reactions={reactions} onReact={onReact}
-                />
-            </div>
-
-            {m.id !== undefined && !m.deleted && !isEditing && (
-                <MessageActions
-                    isOwn={isOwn}
-                    isPinned={isPinned}
-                    side="right"
-                    onEdit={() => onStartEdit(m.id!, m.text)}
-                    onDelete={() => onDelete(m.id!)}
-                    onPin={() => onPin(m.id!)}
-                    onUnpin={() => onUnpin(m.id!)}
-                />
-            )}
-        </div>
     );
 }
 
@@ -269,6 +184,21 @@ export const MessageList = forwardRef<MessageListHandle, {
                 const msgRx  = m.id !== undefined ? reactions[m.id] : undefined;
                 const pinned = m.id !== undefined ? pinnedIds.has(m.id) : false;
 
+                const rowProps = {
+                    m, name, myUsername,
+                    isCont: cont, isPinned: pinned, reactions: msgRx,
+                    editingId, editText,
+                    onEditChange: setEditText,
+                    onEditSubmit: submitEdit,
+                    onEditCancel: cancelEdit,
+                    onStartEdit: startEdit,
+                    onDelete: (id: number) => onDelete?.(id),
+                    onReact: (id: number, emoji: string) => onReact?.(id, emoji),
+                    onPin: (id: number) => onPin?.(id),
+                    onUnpin: (id: number) => onUnpin?.(id),
+                    onUserClick: (e: React.MouseEvent) => onUserHover?.(m.userId, e),
+                };
+
                 return (
                     <Fragment key={key}>
                         {newDay && (
@@ -276,20 +206,7 @@ export const MessageList = forwardRef<MessageListHandle, {
                                 <span className="dw-day-label">{formatDay(m.timestamp)}</span>
                             </div>
                         )}
-                        <MsgRow
-                            m={m} isOwn={isOwn} name={name} myUsername={myUsername}
-                            isCont={cont} isPinned={pinned} reactions={msgRx}
-                            editingId={editingId} editText={editText}
-                            onEditChange={setEditText}
-                            onEditSubmit={submitEdit}
-                            onEditCancel={cancelEdit}
-                            onStartEdit={startEdit}
-                            onDelete={id => onDelete?.(id)}
-                            onReact={(id, emoji) => onReact?.(id, emoji)}
-                            onPin={id => onPin?.(id)}
-                            onUnpin={id => onUnpin?.(id)}
-                            onUserClick={e => onUserHover?.(m.userId, e)}
-                        />
+                        {isOwn ? <OutgoingRow {...rowProps} /> : <IncomingRow {...rowProps} />}
                     </Fragment>
                 );
             })}
