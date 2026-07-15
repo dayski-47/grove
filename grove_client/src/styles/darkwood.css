@@ -740,8 +740,15 @@ input, textarea {
 }
 
 .dw-msg-row:hover { background: rgba(255,255,255,0.015); }
+
+/* .own — peer-to-peer chats only: mirrors your messages to the right lane. */
 .dw-msg-row.own   { background: rgba(106,184,112,0.018); flex-direction: row-reverse; }
 .dw-msg-row.own:hover { background: rgba(106,184,112,0.03); }
+
+/* .own-accent — group/general channels: stays in the shared left lane,
+   differentiated by a leaf rail + tint instead of repositioning. */
+.dw-msg-row.own-accent { background: rgba(106,184,112,0.018); }
+.dw-msg-row.own-accent:hover { background: rgba(106,184,112,0.03); }
 
 /* Continuation row */
 .dw-msg-row.cont {
@@ -795,6 +802,19 @@ input, textarea {
 
 .dw-msg-body { flex: 0 1 auto; min-width: 0; max-width: 70%; }
 
+/* Peer-to-peer: thin rail on the edge touching your avatar, no fill. */
+.dw-msg-row.own .dw-msg-body {
+  border-right: 2px solid var(--leaf);
+  padding-right: var(--sp-3);
+}
+
+/* Group/general: thin rail on the edge touching the shared left avatar column. */
+.dw-msg-row.own-accent .dw-msg-body {
+  border-left: 2px solid var(--leaf);
+  padding-left: var(--sp-3);
+  margin-left: -2px;
+}
+
 .dw-msg-meta {
   display: flex;
   align-items: baseline;
@@ -814,6 +834,7 @@ input, textarea {
 }
 
 .dw-msg-author:hover { color: var(--leaf-bright); }
+.dw-msg-author.own   { color: var(--leaf); }
 
 .dw-msg-time {
   font-size: 10px;

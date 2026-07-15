@@ -15,6 +15,20 @@ export function avatarBg(uid: number): string {
     return AVATAR_COLORS[uid % AVATAR_COLORS.length];
 }
 
+// Per-sender username text colors for group/general channels. Deliberately
+// excludes green (--leaf family) since that's reserved for "this is you" —
+// a green username would read as your own message. Brighter than
+// AVATAR_COLORS since these sit directly on --void/--surface-0 as text,
+// not as a background fill behind a white initial.
+const SENDER_TEXT_COLORS = [
+    "#7aa0d9", "#c48fd9", "#d9a15c", "#5cc4c9",
+    "#d97a8f", "#8f9bd9", "#c9a25c", "#a5729e",
+];
+
+export function senderTextColor(uid: number): string {
+    return SENDER_TEXT_COLORS[uid % SENDER_TEXT_COLORS.length];
+}
+
 export function initial(name: string): string {
     return name.slice(0, 1).toUpperCase();
 }
@@ -80,6 +94,8 @@ export interface MessageRowProps {
     m:            DisplayMessage;
     name:         string;
     myUsername:   string;
+    isOwn:        boolean;
+    senderColor?: string;
     isCont:       boolean;
     isPinned:     boolean;
     reactions:    Record<string, ReactionInfo> | undefined;

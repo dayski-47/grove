@@ -7,7 +7,7 @@ import {
     useRef,
     useState,
 } from "react";
-import { type ReactionsMap } from "./MessageRow/shared";
+import { senderTextColor, type ReactionsMap } from "./MessageRow/shared";
 import { IncomingRow } from "./MessageRow/IncomingRow";
 import { OutgoingRow } from "./MessageRow/OutgoingRow";
 
@@ -51,6 +51,7 @@ export const MessageList = forwardRef<MessageListHandle, {
     messages:      DisplayMessage[];
     currentUserId: number;
     myUsername?:   string;
+    isDm?:         boolean;
     usernames:     Record<number, string>;
     reactions?:    ReactionsMap;
     pinnedIds?:    Set<number>;
@@ -69,6 +70,7 @@ export const MessageList = forwardRef<MessageListHandle, {
     messages,
     currentUserId,
     myUsername   = "",
+    isDm         = false,
     usernames,
     reactions    = {},
     pinnedIds    = new Set(),
@@ -184,8 +186,15 @@ export const MessageList = forwardRef<MessageListHandle, {
                 const msgRx  = m.id !== undefined ? reactions[m.id] : undefined;
                 const pinned = m.id !== undefined ? pinnedIds.has(m.id) : false;
 
+                // Peer-to-peer chats keep the split-lane layout (own on the right).
+                // Group/general/shared channels keep everyone in one left-aligned
+                // lane and differentiate by color instead: your own messages get
+                // the leaf accent, every other sender gets a distinct identity
+                // color so a busy channel stays readable at a glance.
+                const senderColor = !isDm && !isOwn ? senderTextColor(m.userId) : undefined;
+
                 const rowProps = {
-                    m, name, myUsername,
+                    m, name, myUsername, isOwn, senderColor,
                     isCont: cont, isPinned: pinned, reactions: msgRx,
                     editingId, editText,
                     onEditChange: setEditText,
@@ -199,6 +208,10 @@ export const MessageList = forwardRef<MessageListHandle, {
                     onUserClick: (e: React.MouseEvent) => onUserHover?.(m.userId, e),
                 };
 
+                const row = isDm
+                    ? (isOwn ? <OutgoingRow {...rowProps} /> : <IncomingRow {...rowProps} />)
+                    : <IncomingRow {...rowProps} />;
+
                 return (
                     <Fragment key={key}>
                         {newDay && (
@@ -206,7 +219,7 @@ export const MessageList = forwardRef<MessageListHandle, {
                                 <span className="dw-day-label">{formatDay(m.timestamp)}</span>
                             </div>
                         )}
-                        {isOwn ? <OutgoingRow {...rowProps} /> : <IncomingRow {...rowProps} />}
+                        {row}
                     </Fragment>
                 );
             })}

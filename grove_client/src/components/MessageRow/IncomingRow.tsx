@@ -3,13 +3,18 @@ import { MessageBody } from "./MessageBody";
 import { avatarBg, formatTime, initial, type MessageRowProps } from "./shared";
 
 export function IncomingRow({
-    m, name, myUsername, isCont, isPinned, reactions,
+    m, name, myUsername, isOwn, senderColor, isCont, isPinned, reactions,
     editingId, editText, onEditChange, onEditSubmit, onEditCancel,
     onStartEdit, onDelete, onReact, onPin, onUnpin, onUserClick,
 }: MessageRowProps) {
     const isEditing   = m.id !== undefined && editingId === m.id;
-    const rowClass    = ["dw-msg-row", isCont ? "cont" : ""].filter(Boolean).join(" ");
+    // "own-accent" (not "own") — this row never mirrors to the right, it only
+    // gets the leaf accent treatment. "own" is reserved for OutgoingRow's
+    // split-lane mirroring so the two don't collide when both classes could
+    // theoretically apply to a left-aligned own message in group mode.
+    const rowClass    = ["dw-msg-row", isCont ? "cont" : "", isOwn ? "own-accent" : ""].filter(Boolean).join(" ");
     const showActions = m.id !== undefined && !m.deleted && !isEditing;
+    const authorStyle = !isOwn && senderColor ? { color: senderColor } : undefined;
 
     return (
         <div className={rowClass}>
@@ -31,7 +36,12 @@ export function IncomingRow({
             <div className="dw-msg-body">
                 {!isCont && (
                     <div className="dw-msg-meta">
-                        <button className="dw-msg-author" onClick={onUserClick} aria-label={`View ${name}'s profile`}>
+                        <button
+                            className={`dw-msg-author${isOwn ? " own" : ""}`}
+                            style={authorStyle}
+                            onClick={onUserClick}
+                            aria-label={`View ${name}'s profile`}
+                        >
                             {name}
                         </button>
                         <span className="dw-msg-time">{formatTime(m.timestamp)}</span>
@@ -47,7 +57,7 @@ export function IncomingRow({
 
             {showActions && (
                 <MessageActions
-                    isOwn={false} isPinned={isPinned} side="right"
+                    isOwn={isOwn} isPinned={isPinned} side="right"
                     onEdit={() => onStartEdit(m.id!, m.text)}
                     onDelete={() => onDelete(m.id!)}
                     onPin={() => onPin(m.id!)}

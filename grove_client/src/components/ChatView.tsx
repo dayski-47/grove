@@ -92,6 +92,7 @@ export function ChatView({
                 messages={messages}
                 currentUserId={currentUserId}
                 myUsername={myUsername}
+                isDm={isDm}
                 usernames={usernames}
                 reactions={reactions}
                 pinnedIds={pinnedIds}
