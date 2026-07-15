@@ -21,6 +21,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let redis_url = std::env::var("REDIS_URL").expect("REDIS_URL must be set");
     let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
 
+    if jwt_secret.len() < 32 {
+        eprintln!(
+            "FATAL: JWT_SECRET must be at least 32 bytes (got {})",
+            jwt_secret.len()
+        );
+        std::process::exit(1);
+    }
+
     let db_pool = database::connect_db(&database_url).await?;
     // Single ConnectionManager shared across all subsystems — each clone is an Arc bump.
     let redis_conn = cache::connect_redis(&redis_url).await?;

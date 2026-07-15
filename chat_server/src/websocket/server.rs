@@ -3,7 +3,8 @@ use crate::api::auth::Claims;
 use crate::api::ratelimit::check_rate_limit;
 use crate::websocket::handler::handle_connection;
 use crate::websocket::state::ServerState;
-use jsonwebtoken::{DecodingKey, Validation, decode};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use redis::AsyncCommands;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
@@ -30,7 +31,9 @@ pub async fn run_websocket_server(
             }
 
             let user_id = Arc::new(std::sync::Mutex::new(None::<i64>));
-            let user_id_clone = Arc::clone(&user_id);
+            let user_exp = Arc::new(std::sync::Mutex::new(0usize));
+            let uid_clone = Arc::clone(&user_id);
+            let exp_clone = Arc::clone(&user_exp);
             let secret = app_state.jwt_secret.clone();
 
             #[allow(clippy::collapsible_if, clippy::result_large_err)]
@@ -47,9 +50,10 @@ pub async fn run_websocket_server(
                         if let Ok(data) = decode::<Claims>(
                             token,
                             &DecodingKey::from_secret(secret.as_bytes()),
-                            &Validation::default(),
+                            &Validation::new(Algorithm::HS256),
                         ) {
-                            *user_id_clone.lock().unwrap() = Some(data.claims.sub);
+                            *uid_clone.lock().unwrap() = Some(data.claims.sub);
+                            *exp_clone.lock().unwrap() = data.claims.exp;
                             return Ok(response);
                         }
                     }
@@ -64,15 +68,28 @@ pub async fn run_websocket_server(
 
             match ws_result {
                 Ok(ws_stream) => {
-                    let uid = user_id.lock().unwrap().unwrap_or(0) as u64;
-                    #[allow(clippy::collapsible_if)]
-                    if uid > 0 {
-                        if let Err(e) =
-                            handle_connection(ws_stream, server_state, Arc::clone(&app_state), uid)
-                                .await
-                        {
-                            eprintln!("Connection error {}: {}", peer_addr, e);
-                        }
+                    let uid = match *user_id.lock().unwrap() {
+                        Some(id) if id > 0 => id as u64,
+                        _ => return,
+                    };
+                    let exp = *user_exp.lock().unwrap();
+
+                    // Reject connections whose token has been logged out (blocklist).
+                    let blocklist_key = format!("blocklist:{}:{}", uid, exp);
+                    let blocked: bool = {
+                        let mut con = app_state.redis.clone();
+                        con.exists(&blocklist_key).await.unwrap_or(false)
+                    };
+                    if blocked {
+                        drop(ws_stream);
+                        return;
+                    }
+
+                    if let Err(e) =
+                        handle_connection(ws_stream, server_state, Arc::clone(&app_state), uid)
+                            .await
+                    {
+                        eprintln!("Connection error {}: {}", peer_addr, e);
                     }
                 }
                 Err(e) => eprintln!("WS handshake failed {}: {}", peer_addr, e),

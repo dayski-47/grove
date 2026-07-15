@@ -23,6 +23,7 @@ pub async fn insert_message(
 
 /// Toggles a reaction (add if absent, remove if present).
 /// Returns `(message_id, action, new_count)` or None if the message doesn't exist in this channel.
+/// All three operations run inside a single transaction to prevent races between concurrent toggles.
 pub async fn toggle_reaction(
     pool: &PgPool,
     message_id: i64,
@@ -30,12 +31,14 @@ pub async fn toggle_reaction(
     user_id: i64,
     emoji: &str,
 ) -> Result<Option<(i64, &'static str, i64)>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
     let exists: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM messages WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL",
     )
     .bind(message_id)
     .bind(channel_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
     if exists.is_none() {
@@ -47,7 +50,7 @@ pub async fn toggle_reaction(
             .bind(message_id)
             .bind(user_id)
             .bind(emoji)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?
             .rows_affected();
 
@@ -60,17 +63,20 @@ pub async fn toggle_reaction(
         .bind(message_id)
         .bind(user_id)
         .bind(emoji)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
         "add"
     };
 
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM reactions WHERE message_id = $1 AND emoji = $2")
-            .bind(message_id)
-            .bind(emoji)
-            .fetch_one(pool)
-            .await?;
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)::BIGINT FROM reactions WHERE message_id = $1 AND emoji = $2",
+    )
+    .bind(message_id)
+    .bind(emoji)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
 
     Ok(Some((message_id, action, count)))
 }

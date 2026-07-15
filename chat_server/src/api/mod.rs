@@ -9,7 +9,7 @@ use crate::cache::presence::PresenceTracker;
 use axum::extract::FromRequestParts;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
-use jsonwebtoken::{DecodingKey, Validation, decode};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
@@ -47,7 +47,7 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedUser {
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(state.jwt_secret.as_bytes()),
-            &Validation::default(),
+            &Validation::new(Algorithm::HS256),
         )
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 

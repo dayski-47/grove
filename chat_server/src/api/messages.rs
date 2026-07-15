@@ -7,6 +7,7 @@ use axum::{
     http::StatusCode,
 };
 use redis::AsyncCommands;
+use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -128,7 +129,11 @@ pub async fn search_users(
     State(state): State<Arc<AppState>>,
     Query(params): Query<SearchQuery>,
 ) -> Result<Json<Vec<UserProfile>>, StatusCode> {
-    let pattern = format!("%{}%", params.q.trim().to_lowercase());
+    let q = params.q.trim().to_lowercase();
+    if q.is_empty() || q.len() > 50 {
+        return Ok(Json(vec![]));
+    }
+    let pattern = format!("%{}%", q);
     let users = sqlx::query_as::<_, UserProfile>(
         "SELECT id, username, about,
                 FLOOR(EXTRACT(EPOCH FROM last_seen))::BIGINT AS last_seen
@@ -166,10 +171,18 @@ pub async fn create_channel(
 ) -> Result<Json<CreateChannelResponse>, (StatusCode, String)> {
     validate_channel_name(&req.name)?;
 
+    // Both DB writes in one transaction: if either fails the channel doesn't exist.
+    let mut tx = state.db.begin().await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Server error".to_string(),
+        )
+    })?;
+
     let channel_id: i64 =
         sqlx::query_scalar("INSERT INTO channels (name) VALUES ($1) RETURNING id")
             .bind(req.name.trim())
-            .fetch_one(&state.db)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|_| {
                 (
@@ -178,23 +191,31 @@ pub async fn create_channel(
                 )
             })?;
 
-    let mut con = state.redis.clone();
-    let key = format!("channel:{}:members", channel_id);
-    let _: () = con.sadd(&key, auth.user_id).await.map_err(|_| {
+    sqlx::query(
+        "INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(channel_id)
+    .bind(auth.user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Server error".to_string(),
         )
     })?;
 
-    sqlx::query(
-        "INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-    )
-    .bind(channel_id)
-    .bind(auth.user_id)
-    .execute(&state.db)
-    .await
-    .map_err(|_| {
+    tx.commit().await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Server error".to_string(),
+        )
+    })?;
+
+    // Seed Redis membership after successful commit.
+    let mut con = state.redis.clone();
+    let key = format!("channel:{}:members", channel_id);
+    let _: () = con.sadd(&key, auth.user_id).await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Server error".to_string(),
@@ -600,18 +621,13 @@ pub async fn list_friends(
 // ── Pinned messages ───────────────────────────────────────────────────────────
 
 async fn assert_channel_member(
-    pool: &sqlx::PgPool,
+    redis: &ConnectionManager,
     channel_id: i64,
     user_id: i64,
 ) -> Result<(), StatusCode> {
-    let ok = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2)",
-    )
-    .bind(channel_id)
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(false);
+    let mut con = redis.clone();
+    let key = format!("channel:{}:members", channel_id);
+    let ok: bool = con.sismember(&key, user_id).await.unwrap_or(false);
     if ok {
         Ok(())
     } else {
@@ -624,7 +640,7 @@ pub async fn get_channel_pins(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ReactionsQuery>,
 ) -> Result<Json<Vec<PinnedMessage>>, StatusCode> {
-    assert_channel_member(&state.db, params.channel_id, auth.user_id).await?;
+    assert_channel_member(&state.redis, params.channel_id, auth.user_id).await?;
 
     let pins = sqlx::query_as::<_, PinnedMessage>(
         "SELECT pm.message_id, pm.channel_id,
@@ -660,7 +676,7 @@ pub async fn pin_message(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
-    assert_channel_member(&state.db, channel_id, auth.user_id).await?;
+    assert_channel_member(&state.redis, channel_id, auth.user_id).await?;
 
     sqlx::query(
         "INSERT INTO pinned_messages (channel_id, message_id, pinned_by)
@@ -688,7 +704,7 @@ pub async fn unpin_message(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    assert_channel_member(&state.db, channel_id, auth.user_id).await?;
+    assert_channel_member(&state.redis, channel_id, auth.user_id).await?;
 
     sqlx::query("DELETE FROM pinned_messages WHERE channel_id = $1 AND message_id = $2")
         .bind(channel_id)

@@ -17,6 +17,7 @@ export interface DisplayMessage {
     timestamp: number;
     edited?:   boolean;
     deleted?:  boolean;
+    pending?:  boolean;
 }
 
 export interface MessageListHandle {
@@ -153,7 +154,7 @@ function MsgRow({
         if (e.key === "Escape") onEditCancel();
     }
 
-    const rowClass = ["dw-msg-row", isCont ? "cont" : "", isOwn ? "own" : ""].filter(Boolean).join(" ");
+    const rowClass = ["dw-msg-row", isCont ? "cont" : "", isOwn ? "own" : "", m.pending ? "pending" : ""].filter(Boolean).join(" ");
 
     return (
         <div className={rowClass}>

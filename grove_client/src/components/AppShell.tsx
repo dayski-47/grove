@@ -351,13 +351,20 @@ export function AppShell({
                 }
 
                 if (msg.msgType === MessageType.TEXT) {
-                    setMessages(prev => ({
-                        ...prev,
-                        [msg.channelId]: [
-                            ...(prev[msg.channelId] ?? []),
-                            { id: msg.msgId, userId: msg.userId, text: msg.text, timestamp: msg.timestamp },
-                        ],
-                    }));
+                    const incoming = { id: msg.msgId, userId: msg.userId, text: msg.text, timestamp: msg.timestamp };
+                    setMessages(prev => {
+                        const arr = prev[msg.channelId] ?? [];
+                        // Own message echoed back — replace the pending placeholder we added optimistically.
+                        if (msg.userId === userId) {
+                            const pendingIdx = arr.reduce((found, m, i) => (m.pending ? i : found), -1);
+                            if (pendingIdx !== -1) {
+                                const next = [...arr];
+                                next[pendingIdx] = incoming;
+                                return { ...prev, [msg.channelId]: next };
+                            }
+                        }
+                        return { ...prev, [msg.channelId]: [...arr, incoming] };
+                    });
                     resolveUsername(msg.userId);
                     const isBackground = activeForKeys.current !== msg.channelId;
                     if (isBackground) {
@@ -838,7 +845,14 @@ export function AppShell({
                         reactions={activeReactions}
                         pins={activePins}
                         mentionUsers={mentionUsers}
-                        onSend={text => socketRef.current?.sendText(activeChannelId, text)}
+                        onSend={text => {
+                            const now = Math.floor(Date.now() / 1000);
+                            setMessages(prev => ({
+                                ...prev,
+                                [activeChannelId]: [...(prev[activeChannelId] ?? []), { userId, text, timestamp: now, pending: true }],
+                            }));
+                            socketRef.current?.sendText(activeChannelId, text);
+                        }}
                         onTyping={() => socketRef.current?.sendTyping(activeChannelId)}
                         onLoadMore={() => loadMoreMessages(activeChannelId)}
                         onReact={(msgId, emoji) => socketRef.current?.sendReaction(activeChannelId, msgId, emoji)}

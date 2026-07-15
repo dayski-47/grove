@@ -742,6 +742,7 @@ input, textarea {
 .dw-msg-row:hover { background: rgba(255,255,255,0.015); }
 .dw-msg-row.own   { background: rgba(106,184,112,0.018); }
 .dw-msg-row.own:hover { background: rgba(106,184,112,0.03); }
+.dw-msg-row.pending { opacity: 0.5; pointer-events: none; }
 
 /* Continuation row */
 .dw-msg-row.cont {

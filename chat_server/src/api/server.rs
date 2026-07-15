@@ -12,6 +12,7 @@ use axum::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 
@@ -40,6 +41,7 @@ pub async fn run_rest_server(
         .route("/api/messages/pins", get(get_channel_pins))
         .route("/api/messages/pin", post(pin_message))
         .route("/api/messages/unpin", post(unpin_message))
+        .layer(CompressionLayer::new())
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(
             CorsLayer::new()

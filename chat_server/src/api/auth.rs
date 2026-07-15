@@ -5,7 +5,7 @@ use axum::extract::ConnectInfo;
 use axum::http::HeaderMap;
 use axum::{Json, extract::State, http::StatusCode};
 use bcrypt::{DEFAULT_COST, hash, verify};
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -181,7 +181,7 @@ pub async fn logout(
     let token_data = decode::<Claims>(
         token,
         &DecodingKey::from_secret(state.jwt_secret.as_bytes()),
-        &Validation::default(),
+        &Validation::new(Algorithm::HS256),
     )
     .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
