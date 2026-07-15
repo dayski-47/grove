@@ -744,6 +744,7 @@ input, textarea {
 /* .own — peer-to-peer chats only: mirrors your messages to the right lane. */
 .dw-msg-row.own   { background: rgba(106,184,112,0.018); flex-direction: row-reverse; }
 .dw-msg-row.own:hover { background: rgba(106,184,112,0.03); }
+.dw-msg-row.pending { opacity: 0.5; pointer-events: none; }
 
 /* .own-accent — group/general channels: stays in the shared left lane,
    differentiated by a leaf rail + tint instead of repositioning. */

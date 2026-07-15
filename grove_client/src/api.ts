@@ -35,7 +35,12 @@ async function postJson<T>(
     }
 
     const text = await res.text();
-    return text ? (JSON.parse(text) as T) : ({} as T);
+    if (!text) return undefined as T;
+    try {
+        return JSON.parse(text) as T;
+    } catch {
+        throw new Error(`Invalid JSON from ${path}: ${text.slice(0, 80)}`);
+    }
 }
 
 export function register(req: RegisterRequest): Promise<AuthResponse> {

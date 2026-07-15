@@ -18,6 +18,7 @@ export interface DisplayMessage {
     timestamp: number;
     edited?:   boolean;
     deleted?:  boolean;
+    pending?:  boolean;
 }
 
 export interface MessageListHandle {

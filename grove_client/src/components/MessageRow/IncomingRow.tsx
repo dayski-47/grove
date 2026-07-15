@@ -12,7 +12,7 @@ export function IncomingRow({
     // gets the leaf accent treatment. "own" is reserved for OutgoingRow's
     // split-lane mirroring so the two don't collide when both classes could
     // theoretically apply to a left-aligned own message in group mode.
-    const rowClass    = ["dw-msg-row", isCont ? "cont" : "", isOwn ? "own-accent" : ""].filter(Boolean).join(" ");
+    const rowClass    = ["dw-msg-row", isCont ? "cont" : "", isOwn ? "own-accent" : "", m.pending ? "pending" : ""].filter(Boolean).join(" ");
     const showActions = m.id !== undefined && !m.deleted && !isEditing;
     const authorStyle = !isOwn && senderColor ? { color: senderColor } : undefined;
 

@@ -8,7 +8,7 @@ export function OutgoingRow({
     onStartEdit, onDelete, onReact, onPin, onUnpin, onUserClick,
 }: MessageRowProps) {
     const isEditing   = m.id !== undefined && editingId === m.id;
-    const rowClass    = ["dw-msg-row", "own", isCont ? "cont" : ""].filter(Boolean).join(" ");
+    const rowClass    = ["dw-msg-row", "own", isCont ? "cont" : "", m.pending ? "pending" : ""].filter(Boolean).join(" ");
     const showActions = m.id !== undefined && !m.deleted && !isEditing;
 
     return (
