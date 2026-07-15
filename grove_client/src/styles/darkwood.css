@@ -651,10 +651,10 @@ input, textarea {
   justify-content: center;
   color: var(--text-muted);
   cursor: pointer;
-  transition: color var(--dur-fast), background var(--dur-fast);
+  transition: color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast);
 }
 
-.dw-icon-btn:hover { color: var(--text-primary); background: var(--surface-2); }
+.dw-icon-btn:hover { color: var(--text-primary); background: var(--surface-2); transform: scale(1.05); }
 .dw-icon-btn svg { width: 16px; height: 16px; }
 
 /* Messages */
@@ -1892,11 +1892,11 @@ input, textarea {
   color: var(--leaf-bright);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background var(--dur-fast);
+  transition: background var(--dur-fast), transform var(--dur-fast);
   animation: gv-logo-breathe 5s ease-in-out infinite;
 }
 
-.dw-topbar-logo:hover { background: var(--leaf-glow); animation-play-state: paused; }
+.dw-topbar-logo:hover { background: var(--leaf-glow); animation-play-state: paused; transform: scale(1.05); }
 .dw-topbar-logo svg   { width: 18px; height: 18px; }
 
 /* Location pill — clickable, opens palette */
@@ -1999,11 +1999,11 @@ input, textarea {
   justify-content: center;
   color: var(--text-muted);
   cursor: pointer;
-  transition: color var(--dur-fast), background var(--dur-fast);
+  transition: color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast);
   flex-shrink: 0;
 }
 
-.dw-topbar-btn:hover  { color: var(--text-secondary); background: var(--surface-2); }
+.dw-topbar-btn:hover  { color: var(--text-secondary); background: var(--surface-2); transform: scale(1.05); }
 .dw-topbar-btn.active { color: var(--leaf-bright);    background: var(--leaf-glow); }
 .dw-topbar-btn svg    { width: 18px; height: 18px; }
 
