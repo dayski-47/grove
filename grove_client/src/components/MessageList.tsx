@@ -6,13 +6,12 @@ import {
     useLayoutEffect,
     useRef,
     useState,
-    type KeyboardEvent,
 } from "react";
 import {
-    avatarBg, formatTime, initial, parseMarkdown,
-    QUICK_EMOJIS, type ReactionInfo, type ReactionsMap,
+    avatarBg, formatTime, initial, type ReactionInfo, type ReactionsMap,
 } from "./MessageRow/shared";
 import { MessageActions } from "./MessageRow/MessageActions";
+import { MessageBody } from "./MessageRow/MessageBody";
 
 export interface DisplayMessage {
     id?:       number;
@@ -78,13 +77,7 @@ function MsgRow({
     onStartEdit, onDelete, onReact, onPin, onUnpin,
     onUserClick,
 }: MsgRowProps) {
-    const isEditing    = m.id !== undefined && editingId === m.id;
-    const msgReactions = reactions ? Object.entries(reactions) : [];
-
-    function handleEditKey(e: KeyboardEvent<HTMLInputElement>) {
-        if (e.key === "Enter")  { e.preventDefault(); onEditSubmit(); }
-        if (e.key === "Escape") onEditCancel();
-    }
+    const isEditing = m.id !== undefined && editingId === m.id;
 
     const rowClass = ["dw-msg-row", isCont ? "cont" : "", isOwn ? "own" : ""].filter(Boolean).join(" ");
 
@@ -115,56 +108,11 @@ function MsgRow({
                     </div>
                 )}
 
-                <div>
-                    {m.deleted ? (
-                        <span className="dw-msg-deleted">message deleted</span>
-                    ) : isEditing ? (
-                        <div className="dw-edit-wrap">
-                            <input
-                                className="dw-edit-input"
-                                value={editText}
-                                onChange={e => onEditChange(e.target.value)}
-                                onKeyDown={handleEditKey}
-                                autoFocus
-                                aria-label="Edit message"
-                            />
-                            <span className="dw-edit-hint">Enter to save · Esc to cancel</span>
-                        </div>
-                    ) : (
-                        <span className="dw-msg-text">
-                            {parseMarkdown(m.text, myUsername)}
-                        </span>
-                    )}
-                    {m.edited && !m.deleted && !isEditing && (
-                        <span className="dw-msg-edited-tag">(edited)</span>
-                    )}
-                </div>
-
-                {msgReactions.length > 0 && (
-                    <div className="dw-reactions" aria-label="Reactions">
-                        {msgReactions.map(([emoji, info]) => (
-                            <button
-                                key={emoji}
-                                className={`dw-reaction${info.byMe ? " mine" : ""}`}
-                                onClick={() => m.id !== undefined && onReact(m.id, emoji)}
-                                title={info.byMe ? `You reacted ${emoji}` : `React with ${emoji}`}
-                            >
-                                {emoji}
-                                <span className="dw-reaction-count">{info.count}</span>
-                            </button>
-                        ))}
-                    </div>
-                )}
-
-                {m.id !== undefined && !m.deleted && !isEditing && (
-                    <div className="dw-emoji-pick" aria-label="Quick react">
-                        {QUICK_EMOJIS.map(e => (
-                            <button key={e} className="dw-emoji-btn" title={`React ${e}`} onClick={() => onReact(m.id!, e)}>
-                                {e}
-                            </button>
-                        ))}
-                    </div>
-                )}
+                <MessageBody
+                    m={m} myUsername={myUsername} isEditing={isEditing} editText={editText}
+                    onEditChange={onEditChange} onEditSubmit={onEditSubmit} onEditCancel={onEditCancel}
+                    reactions={reactions} onReact={onReact}
+                />
             </div>
 
             {m.id !== undefined && !m.deleted && !isEditing && (
