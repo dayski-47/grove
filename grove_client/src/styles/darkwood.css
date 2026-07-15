@@ -972,23 +972,25 @@ input, textarea {
   gap: 2px;
   opacity: 0;
   position: absolute;
-  right: var(--sp-4);
   top: 50%;
-  transform: translateY(-50%);
+  transform: translateY(-50%) scale(0.94);
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 2px;
-  transition: opacity var(--dur-fast);
+  transition: opacity var(--dur-fast), transform var(--dur-fast);
   z-index: 2;
 }
 
-.dw-msg-row:hover .dw-msg-actions { opacity: 1; }
+.dw-msg-actions.right { right: var(--sp-4); }
+.dw-msg-actions.left  { left: var(--sp-4); }
+
+.dw-msg-row:hover .dw-msg-actions { opacity: 1; transform: translateY(-50%) scale(1); }
 
 .dw-msg-action {
   width: 28px;
   height: 28px;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1209,12 +1211,12 @@ input, textarea {
   flex-shrink: 0;
   opacity: 0;
   pointer-events: none;
-  transition: background var(--dur-fast), opacity var(--dur-fast);
+  transition: background var(--dur-fast), opacity var(--dur-fast), transform var(--dur-fast);
   border: none;
 }
 
 .dw-send-btn.show { opacity: 1; pointer-events: all; }
-.dw-send-btn:hover { background: var(--leaf-bright); }
+.dw-send-btn:hover { background: var(--leaf-bright); transform: scale(1.05); }
 .dw-send-btn svg { width: 15px; height: 15px; }
 
 /* Mention dropdown */
