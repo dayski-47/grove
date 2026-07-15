@@ -1,7 +1,6 @@
 import {
     forwardRef,
     Fragment,
-    type ReactNode,
     useEffect,
     useImperativeHandle,
     useLayoutEffect,
@@ -9,6 +8,10 @@ import {
     useState,
     type KeyboardEvent,
 } from "react";
+import {
+    avatarBg, formatTime, initial, parseMarkdown,
+    QUICK_EMOJIS, type ReactionInfo, type ReactionsMap,
+} from "./MessageRow/shared";
 
 export interface DisplayMessage {
     id?:       number;
@@ -21,26 +24,6 @@ export interface DisplayMessage {
 
 export interface MessageListHandle {
     startEdit: (id: number, text: string) => void;
-}
-
-type ReactionInfo = { count: number; byMe: boolean };
-type ReactionsMap = Record<number, Record<string, ReactionInfo>>;
-
-const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
-
-const AVATAR_COLORS = [
-    "#1a5e2a", "#1a4a7d", "#5e1a5e", "#7d3a1a",
-    "#1a6e6e", "#6e1a2a", "#2a4a7d", "#2a6e3a",
-];
-
-function avatarBg(uid: number): string {
-    return AVATAR_COLORS[uid % AVATAR_COLORS.length];
-}
-
-function initial(name: string): string { return name.slice(0, 1).toUpperCase(); }
-
-function formatTime(ts: number): string {
-    return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatDay(ts: number): string {
@@ -62,57 +45,6 @@ function sameDay(a: DisplayMessage, b: DisplayMessage): boolean {
         new Date(a.timestamp * 1000).toDateString() ===
         new Date(b.timestamp * 1000).toDateString()
     );
-}
-
-/* ── Inline markdown parser ──────────────────────────────── */
-
-type Check = { regex: RegExp; type: string };
-
-const CHECKS: Check[] = [
-    { regex: /\*\*(.+?)\*\*/s, type: "bold"    },
-    { regex: /~~(.+?)~~/s,     type: "strike"  },
-    { regex: /\*(.+?)\*/s,     type: "italic"  },
-    { regex: /`([^`\n]+)`/,   type: "code"    },
-    { regex: /@(\w+)/,         type: "mention" },
-    { regex: /\n/,             type: "newline" },
-];
-
-function parseMarkdown(text: string, myUsername: string): ReactNode[] {
-    const nodes: ReactNode[] = [];
-    let remaining = text;
-    let key = 0;
-
-    while (remaining.length > 0) {
-        let earliest: { index: number; type: string; match: RegExpExecArray } | null = null;
-
-        for (const { regex, type } of CHECKS) {
-            const m = regex.exec(remaining);
-            if (!m || m.index === undefined) continue;
-            if (!earliest || m.index < earliest.index) {
-                earliest = { index: m.index, type, match: m };
-            }
-        }
-
-        if (!earliest) { nodes.push(remaining); break; }
-
-        if (earliest.index > 0) nodes.push(remaining.slice(0, earliest.index));
-
-        const { type, match } = earliest;
-        if (type === "bold")    nodes.push(<strong key={key++}>{match[1]}</strong>);
-        else if (type === "strike")  nodes.push(<del key={key++}>{match[1]}</del>);
-        else if (type === "italic")  nodes.push(<em key={key++}>{match[1]}</em>);
-        else if (type === "code")    nodes.push(<code key={key++} className="dw-code-inline">{match[1]}</code>);
-        else if (type === "mention") {
-            const name = match[1];
-            const isMe = name.toLowerCase() === myUsername.toLowerCase();
-            nodes.push(<span key={key++} className={`dw-mention${isMe ? " me" : ""}`}>{match[0]}</span>);
-        }
-        else if (type === "newline") nodes.push(<br key={key++} />);
-
-        remaining = remaining.slice(earliest.index + match[0].length);
-    }
-
-    return nodes;
 }
 
 /* ── Message row ─────────────────────────────────────────── */
