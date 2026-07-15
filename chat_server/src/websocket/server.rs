@@ -75,10 +75,12 @@ pub async fn run_websocket_server(
                     let exp = *user_exp.lock().unwrap();
 
                     // Reject connections whose token has been logged out (blocklist).
+                    // Fail closed: if Redis is unreachable we can't confirm the
+                    // token hasn't been revoked, so treat it as blocked.
                     let blocklist_key = format!("blocklist:{}:{}", uid, exp);
                     let blocked: bool = {
                         let mut con = app_state.redis.clone();
-                        con.exists(&blocklist_key).await.unwrap_or(false)
+                        con.exists(&blocklist_key).await.unwrap_or(true)
                     };
                     if blocked {
                         drop(ws_stream);

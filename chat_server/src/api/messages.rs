@@ -277,13 +277,9 @@ pub async fn join_channel(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let mut con = state.redis.clone();
-    let key = format!("channel:{}:members", req.channel_id);
-    let _: () = con
-        .sadd(&key, auth.user_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
+    // Postgres is the membership source of truth — commit it first. Seeding
+    // Redis before this could grant a channel-membership check (which now
+    // reads Redis, not Postgres) to a user whose Postgres write never lands.
     sqlx::query(
         "INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
     )
@@ -292,6 +288,13 @@ pub async fn join_channel(
     .execute(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut con = state.redis.clone();
+    let key = format!("channel:{}:members", req.channel_id);
+    let _: () = con
+        .sadd(&key, auth.user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(StatusCode::OK)
 }

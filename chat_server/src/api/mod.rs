@@ -54,7 +54,9 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedUser {
         let claims = &token_data.claims;
         let blocklist_key = format!("blocklist:{}:{}", claims.sub, claims.exp);
         let mut con = state.redis.clone();
-        let blocked: bool = con.exists(&blocklist_key).await.unwrap_or(false);
+        // Fail closed: if Redis is unreachable we can't confirm the token
+        // hasn't been revoked, so treat it as blocked rather than admit it.
+        let blocked: bool = con.exists(&blocklist_key).await.unwrap_or(true);
         if blocked {
             return Err(StatusCode::UNAUTHORIZED);
         }
