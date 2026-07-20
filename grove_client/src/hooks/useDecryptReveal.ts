@@ -30,12 +30,14 @@ export function useDecryptReveal(text: string, durationMs = 500): string {
 
     useEffect(() => {
         if (prefersReducedMotion() || text.length === 0) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setDisplay(text);
             return;
         }
 
         const tickMs = Math.max(16, Math.floor(durationMs / text.length));
         let revealed = 0;
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setDisplay(shuffle(text, 0));
 
         const id = setInterval(() => {
