@@ -22,11 +22,10 @@ export function MessageBody({
     const msgReactions   = reactions ? Object.entries(reactions) : [];
     const prevCountsRef  = useRef<Record<string, number> | null>(null);
 
-    // react-hooks/refs flags reading ref.current inside a useMemo body, but
-    // this is the same tail-diff-via-ref pattern already used (and reviewed)
-    // in MessageList.tsx's justArrived computation: the ref is only ever
-    // written from the effect below, read here to snapshot the prior
-    // render's counts, never mutated during render itself.
+    // react-hooks/refs flags this ref.current read inside a useMemo body.
+    // Safe here: the ref only drives a cosmetic "pop" class, is written from
+    // the effect below (never during render), and re-renders are already
+    // driven by the reactions prop, not by this ref.
     const poppingEmojis = useMemo(() => {
         const popping = new Set<string>();
         // eslint-disable-next-line react-hooks/refs -- see comment above useMemo
