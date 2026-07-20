@@ -17,6 +17,7 @@ import { ChatView } from "./ChatView";
 import { useWebRTC } from "../useWebRTC";
 import { packMessage } from "../protocol";
 import type { ActivityStatus } from "./ProfileMenu";
+import { DecryptReveal } from "./motion/DecryptReveal";
 
 /* ── Types ───────────────────────────────────────────────── */
 
@@ -1021,8 +1022,12 @@ function EmptyContent() {
             {EMPTY_FIREFLIES.map((f, i) => (
                 <div key={i} className={`gv-firefly ${f.cls}`} style={{ left: f.left, top: f.top, animationDelay: f.delay }} aria-hidden="true" />
             ))}
-            <div className="gv-empty-brand" aria-label="Grove">grove</div>
-            <p className="gv-empty-tagline">an enchanted place to gather</p>
+            <div className="gv-empty-brand" aria-label="Grove">
+                <DecryptReveal text="grove" />
+            </div>
+            <p className="gv-empty-tagline" aria-label="an enchanted place to gather">
+                <DecryptReveal text="an enchanted place to gather" durationMs={700} />
+            </p>
             <div className="gv-empty-floor" aria-hidden="true">
                 <svg viewBox="0 0 600 160" className="gv-floor-svg">
                     {/* Ground */}
