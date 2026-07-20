@@ -4,7 +4,7 @@ import { avatarBg, formatTime, initial, type MessageRowProps } from "./shared";
 
 export function OutgoingRow({
     m, name, myUsername, isCont, isPinned, reactions,
-    isNew, enterDelayMs, animateReactions,
+    isNew, enterDelayMs,
     editingId, editText, onEditChange, onEditSubmit, onEditCancel,
     onStartEdit, onDelete, onReact, onPin, onUnpin, onUserClick,
 }: MessageRowProps) {
@@ -40,7 +40,7 @@ export function OutgoingRow({
                 <MessageBody
                     m={m} myUsername={myUsername} isEditing={isEditing} editText={editText}
                     onEditChange={onEditChange} onEditSubmit={onEditSubmit} onEditCancel={onEditCancel}
-                    reactions={reactions} onReact={onReact} animateReactions={animateReactions}
+                    reactions={reactions} onReact={onReact}
                 />
             </div>
 

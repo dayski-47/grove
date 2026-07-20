@@ -103,9 +103,9 @@ export const MessageList = forwardRef<MessageListHandle, {
     const mountedRef       = useRef(false);
     const prevMessagesRef  = useRef<DisplayMessage[]>([]);
 
-    const { justArrived, liveUpdate } = useMemo(() => {
+    const { justArrived } = useMemo(() => {
         const prev = prevMessagesRef.current;
-        const empty = { justArrived: new Map<string, number>(), liveUpdate: false };
+        const empty = { justArrived: new Map<string, number>() };
         if (!mountedRef.current) return empty;
 
         const prevFirstKey = prev[0] ? msgKey(prev[0]) : undefined;
@@ -120,7 +120,7 @@ export const MessageList = forwardRef<MessageListHandle, {
             const k = msgKey(m);
             if (!prevKeys.has(k)) justArrived.set(k, staggerIndex++);
         }
-        return { justArrived, liveUpdate: true };
+        return { justArrived };
     }, [messages]);
 
     useEffect(() => {
@@ -233,7 +233,7 @@ export const MessageList = forwardRef<MessageListHandle, {
                 const rowProps = {
                     m, name, myUsername, isOwn, senderColor,
                     isCont: cont, isPinned: pinned, reactions: msgRx,
-                    isNew, enterDelayMs: (staggerIdx ?? 0) * 40, animateReactions: liveUpdate,
+                    isNew, enterDelayMs: (staggerIdx ?? 0) * 40,
                     editingId, editText,
                     onEditChange: setEditText,
                     onEditSubmit: submitEdit,
