@@ -25,6 +25,13 @@ function ease(t: number): number {
     return t * (2 - t);
 }
 
+function resolveColor(value: string, el: Element): string {
+    const match = /^var\((--[\w-]+)\)$/.exec(value.trim());
+    if (!match) return value;
+    const resolved = getComputedStyle(el).getPropertyValue(match[1]).trim();
+    return resolved || value;
+}
+
 /**
  * Ported from reactbits' ClickSpark, which is already zero-dependency
  * (canvas + requestAnimationFrame, no framer-motion). Simplified from a
@@ -60,6 +67,8 @@ export const SendSpark = forwardRef<SendSparkHandle, { color?: string }>(
             const ctx    = canvas?.getContext("2d");
             if (!canvas || !ctx) return;
 
+            const resolvedColor = resolveColor(color, canvas);
+
             const draw = (now: number) => {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 sparksRef.current = sparksRef.current.filter(spark => {
@@ -74,7 +83,7 @@ export const SendSpark = forwardRef<SendSparkHandle, { color?: string }>(
                     const x2 = spark.x + (distance + length) * Math.cos(spark.angle);
                     const y2 = spark.y + (distance + length) * Math.sin(spark.angle);
 
-                    ctx.strokeStyle = color;
+                    ctx.strokeStyle = resolvedColor;
                     ctx.lineWidth   = 1.5;
                     ctx.beginPath();
                     ctx.moveTo(x1, y1);
