@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { login, register } from "../api";
 import { saveSession } from "../auth";
+import { DecryptReveal } from "./motion/DecryptReveal";
 
 function passwordStrength(pw: string): number {
     if (pw.length < 4) return 0;
@@ -157,7 +158,9 @@ export function LoginScreen({ onLogin }: { onLogin: () => void }) {
             {/* Login card */}
             <div className="dw-login-card" role="main">
                 <div className="dw-login-brand">
-                    <div className="dw-login-brand-name">grove</div>
+                    <div className="dw-login-brand-name" aria-label="grove">
+                        <DecryptReveal text="grove" />
+                    </div>
                     <div className="dw-login-brand-rule" />
                 </div>
 
