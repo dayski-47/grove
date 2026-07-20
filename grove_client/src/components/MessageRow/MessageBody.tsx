@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import { parseMarkdown, QUICK_EMOJIS, type ReactionInfo } from "./shared";
 import type { DisplayMessage } from "../MessageList";
 
@@ -20,11 +20,31 @@ export function MessageBody({
     reactions, onReact,
 }: MessageBodyProps) {
     const msgReactions   = reactions ? Object.entries(reactions) : [];
-    const prevCountsRef  = useRef<Map<string, number> | null>(null);
-    const prevCounts     = prevCountsRef.current;
+    const prevCountsRef  = useRef<Record<string, number> | null>(null);
+
+    // react-hooks/refs flags reading ref.current inside a useMemo body, but
+    // this is the same tail-diff-via-ref pattern already used (and reviewed)
+    // in MessageList.tsx's justArrived computation: the ref is only ever
+    // written from the effect below, read here to snapshot the prior
+    // render's counts, never mutated during render itself.
+    const poppingEmojis = useMemo(() => {
+        const popping = new Set<string>();
+        // eslint-disable-next-line react-hooks/refs -- see comment above useMemo
+        const prevCounts = prevCountsRef.current;
+        if (prevCounts === null) return popping;
+
+        const prevMap = new Map(Object.entries(prevCounts));
+        for (const [emoji, info] of msgReactions) {
+            if (prevMap.get(emoji) !== info.count) popping.add(emoji);
+        }
+        return popping;
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- msgReactions is a fresh array every render; reactions is the stable dep that actually changes.
+    }, [reactions]);
 
     useEffect(() => {
-        prevCountsRef.current = new Map(msgReactions.map(([emoji, info]) => [emoji, info.count]));
+        const next: Record<string, number> = {};
+        for (const [emoji, info] of msgReactions) next[emoji] = info.count;
+        prevCountsRef.current = next;
     });
 
     function handleEditKey(e: KeyboardEvent<HTMLInputElement>) {
@@ -61,20 +81,17 @@ export function MessageBody({
 
             {msgReactions.length > 0 && (
                 <div className="dw-reactions" aria-label="Reactions">
-                    {msgReactions.map(([emoji, info]) => {
-                        const justChanged = prevCounts !== null && prevCounts.get(emoji) !== info.count;
-                        return (
-                            <button
-                                key={`${emoji}-${info.count}`}
-                                className={`dw-reaction${info.byMe ? " mine" : ""}${justChanged ? " pop" : ""}`}
-                                onClick={() => m.id !== undefined && onReact(m.id, emoji)}
-                                title={info.byMe ? `You reacted ${emoji}` : `React with ${emoji}`}
-                            >
-                                {emoji}
-                                <span className="dw-reaction-count">{info.count}</span>
-                            </button>
-                        );
-                    })}
+                    {msgReactions.map(([emoji, info]) => (
+                        <button
+                            key={`${emoji}-${info.count}`}
+                            className={`dw-reaction${info.byMe ? " mine" : ""}${poppingEmojis.has(emoji) ? " pop" : ""}`}
+                            onClick={() => m.id !== undefined && onReact(m.id, emoji)}
+                            title={info.byMe ? `You reacted ${emoji}` : `React with ${emoji}`}
+                        >
+                            {emoji}
+                            <span className="dw-reaction-count">{info.count}</span>
+                        </button>
+                    ))}
                 </div>
             )}
 
