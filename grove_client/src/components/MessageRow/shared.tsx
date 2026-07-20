@@ -98,6 +98,9 @@ export interface MessageRowProps {
     senderColor?: string;
     isCont:       boolean;
     isPinned:     boolean;
+    isNew:            boolean;
+    enterDelayMs:     number;
+    animateReactions: boolean;
     reactions:    Record<string, ReactionInfo> | undefined;
     editingId:    number | null;
     editText:     string;

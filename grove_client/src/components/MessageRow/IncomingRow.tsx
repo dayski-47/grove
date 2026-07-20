@@ -4,6 +4,7 @@ import { avatarBg, formatTime, initial, type MessageRowProps } from "./shared";
 
 export function IncomingRow({
     m, name, myUsername, isOwn, senderColor, isCont, isPinned, reactions,
+    isNew, enterDelayMs, animateReactions,
     editingId, editText, onEditChange, onEditSubmit, onEditCancel,
     onStartEdit, onDelete, onReact, onPin, onUnpin, onUserClick,
 }: MessageRowProps) {
@@ -12,12 +13,13 @@ export function IncomingRow({
     // gets the leaf accent treatment. "own" is reserved for OutgoingRow's
     // split-lane mirroring so the two don't collide when both classes could
     // theoretically apply to a left-aligned own message in group mode.
-    const rowClass    = ["dw-msg-row", isCont ? "cont" : "", isOwn ? "own-accent" : "", m.pending ? "pending" : ""].filter(Boolean).join(" ");
+    const rowClass    = ["dw-msg-row", isCont ? "cont" : "", isOwn ? "own-accent" : "", m.pending ? "pending" : "", isNew ? "entering" : ""].filter(Boolean).join(" ");
+    const rowStyle    = isNew && enterDelayMs > 0 ? { animationDelay: `${enterDelayMs}ms` } : undefined;
     const showActions = m.id !== undefined && !m.deleted && !isEditing;
     const authorStyle = !isOwn && senderColor ? { color: senderColor } : undefined;
 
     return (
-        <div className={rowClass}>
+        <div className={rowClass} style={rowStyle}>
             {isCont ? (
                 <div className="dw-cont-space" aria-hidden="true">
                     <span className="dw-cont-time">{formatTime(m.timestamp)}</span>
@@ -51,7 +53,7 @@ export function IncomingRow({
                 <MessageBody
                     m={m} myUsername={myUsername} isEditing={isEditing} editText={editText}
                     onEditChange={onEditChange} onEditSubmit={onEditSubmit} onEditCancel={onEditCancel}
-                    reactions={reactions} onReact={onReact}
+                    reactions={reactions} onReact={onReact} animateReactions={animateReactions}
                 />
             </div>
 

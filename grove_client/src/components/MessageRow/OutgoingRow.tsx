@@ -4,15 +4,17 @@ import { avatarBg, formatTime, initial, type MessageRowProps } from "./shared";
 
 export function OutgoingRow({
     m, name, myUsername, isCont, isPinned, reactions,
+    isNew, enterDelayMs, animateReactions,
     editingId, editText, onEditChange, onEditSubmit, onEditCancel,
     onStartEdit, onDelete, onReact, onPin, onUnpin, onUserClick,
 }: MessageRowProps) {
     const isEditing   = m.id !== undefined && editingId === m.id;
-    const rowClass    = ["dw-msg-row", "own", isCont ? "cont" : "", m.pending ? "pending" : ""].filter(Boolean).join(" ");
+    const rowClass    = ["dw-msg-row", "own", isCont ? "cont" : "", m.pending ? "pending" : "", isNew ? "entering" : ""].filter(Boolean).join(" ");
+    const rowStyle    = isNew && enterDelayMs > 0 ? { animationDelay: `${enterDelayMs}ms` } : undefined;
     const showActions = m.id !== undefined && !m.deleted && !isEditing;
 
     return (
-        <div className={rowClass}>
+        <div className={rowClass} style={rowStyle}>
             {isCont ? (
                 <div className="dw-cont-space" aria-hidden="true">
                     <span className="dw-cont-time">{formatTime(m.timestamp)}</span>
@@ -38,7 +40,7 @@ export function OutgoingRow({
                 <MessageBody
                     m={m} myUsername={myUsername} isEditing={isEditing} editText={editText}
                     onEditChange={onEditChange} onEditSubmit={onEditSubmit} onEditCancel={onEditCancel}
-                    reactions={reactions} onReact={onReact}
+                    reactions={reactions} onReact={onReact} animateReactions={animateReactions}
                 />
             </div>
 

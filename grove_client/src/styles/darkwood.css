@@ -2578,6 +2578,19 @@ input, textarea {
 }
 
 /* ============================================================
+   MESSAGE ENTRANCE (reactbits motion pass)
+   ============================================================ */
+
+@keyframes gv-msg-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.dw-msg-row.entering {
+  animation: gv-msg-enter var(--dur-normal) var(--ease-out) both;
+}
+
+/* ============================================================
    REDUCED MOTION
    ============================================================ */
 
