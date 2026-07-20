@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { SendSpark, type SendSparkHandle } from "./motion/SendSpark";
 
 export function MessageInput({
     onSend,
@@ -20,6 +21,7 @@ export function MessageInput({
     const [mentionIndex, setMentionIndex] = useState(0);
     const lastTypingSent                = useRef(0);
     const inputRef                      = useRef<HTMLTextAreaElement>(null);
+    const sparkRef                      = useRef<SendSparkHandle>(null);
 
     const suggestions = mentionQuery !== null
         ? mentionUsers.filter(u => u.name.toLowerCase().startsWith(mentionQuery.toLowerCase())).slice(0, 6)
@@ -31,6 +33,7 @@ export function MessageInput({
         const trimmed = text.trim();
         if (!trimmed || disabled) return;
         onSend(trimmed);
+        sparkRef.current?.burst();
         setText("");
         setMentionQuery(null);
         // Reset textarea height
@@ -146,15 +149,18 @@ export function MessageInput({
                     onKeyDown={handleKeyDown}
                     autoComplete="off"
                 />
-                <button
-                    className={`dw-send-btn${hasText ? " show" : ""}`}
-                    onClick={submit}
-                    disabled={disabled || !hasText}
-                    aria-label="Send message"
-                    tabIndex={hasText ? 0 : -1}
-                >
-                    <SendIcon />
-                </button>
+                <div className="dw-send-btn-wrap">
+                    <button
+                        className={`dw-send-btn${hasText ? " show" : ""}`}
+                        onClick={submit}
+                        disabled={disabled || !hasText}
+                        aria-label="Send message"
+                        tabIndex={hasText ? 0 : -1}
+                    >
+                        <SendIcon />
+                    </button>
+                    <SendSpark ref={sparkRef} color="var(--leaf-bright)" />
+                </div>
             </div>
         </div>
     );

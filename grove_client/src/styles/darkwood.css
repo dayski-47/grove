@@ -2599,6 +2599,19 @@ input, textarea {
   animation: gv-reaction-pop var(--dur-fast) var(--ease-spring) both;
 }
 
+.dw-send-btn-wrap {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.dw-send-spark-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 /* ============================================================
    REDUCED MOTION
    ============================================================ */
