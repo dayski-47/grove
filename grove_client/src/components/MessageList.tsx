@@ -20,6 +20,7 @@ export interface DisplayMessage {
     edited?:   boolean;
     deleted?:  boolean;
     pending?:  boolean;
+    clientId?: string;
 }
 
 export interface MessageListHandle {
@@ -48,7 +49,7 @@ function sameDay(a: DisplayMessage, b: DisplayMessage): boolean {
 }
 
 function msgKey(m: DisplayMessage): string {
-    return `${m.id ?? m.timestamp}-${m.userId}`;
+    return `${m.clientId ?? m.id ?? m.timestamp}-${m.userId}`;
 }
 
 /* ── MessageList ─────────────────────────────────────────── */
@@ -215,7 +216,7 @@ export const MessageList = forwardRef<MessageListHandle, {
                 const newDay = prev === null || !sameDay(prev, m);
                 const name   = usernames[m.userId] ?? `user ${m.userId}`;
                 const isOwn  = m.userId === currentUserId;
-                const key    = `${m.id ?? m.timestamp}-${m.userId}-${i}`;
+                const key    = `${m.clientId ?? m.id ?? m.timestamp}-${m.userId}-${i}`;
                 const msgRx  = m.id !== undefined ? reactions[m.id] : undefined;
                 const pinned = m.id !== undefined ? pinnedIds.has(m.id) : false;
 

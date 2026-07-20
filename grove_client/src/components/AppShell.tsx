@@ -360,7 +360,7 @@ export function AppShell({
                             const pendingIdx = arr.reduce((found, m, i) => (m.pending ? i : found), -1);
                             if (pendingIdx !== -1) {
                                 const next = [...arr];
-                                next[pendingIdx] = incoming;
+                                next[pendingIdx] = { ...incoming, clientId: arr[pendingIdx].clientId };
                                 return { ...prev, [msg.channelId]: next };
                             }
                         }
@@ -848,9 +848,10 @@ export function AppShell({
                         mentionUsers={mentionUsers}
                         onSend={text => {
                             const now = Math.floor(Date.now() / 1000);
+                            const clientId = crypto.randomUUID();
                             setMessages(prev => ({
                                 ...prev,
-                                [activeChannelId]: [...(prev[activeChannelId] ?? []), { userId, text, timestamp: now, pending: true }],
+                                [activeChannelId]: [...(prev[activeChannelId] ?? []), { userId, text, timestamp: now, pending: true, clientId }],
                             }));
                             socketRef.current?.sendText(activeChannelId, text);
                         }}
