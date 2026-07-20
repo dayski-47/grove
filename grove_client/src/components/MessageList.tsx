@@ -4,6 +4,7 @@ import {
     useEffect,
     useImperativeHandle,
     useLayoutEffect,
+    useMemo,
     useRef,
     useState,
 } from "react";
@@ -44,6 +45,10 @@ function sameDay(a: DisplayMessage, b: DisplayMessage): boolean {
         new Date(a.timestamp * 1000).toDateString() ===
         new Date(b.timestamp * 1000).toDateString()
     );
+}
+
+function msgKey(m: DisplayMessage): string {
+    return `${m.id ?? m.timestamp}-${m.userId}`;
 }
 
 /* ── MessageList ─────────────────────────────────────────── */
@@ -94,6 +99,33 @@ export const MessageList = forwardRef<MessageListHandle, {
     const prevLastTsRef  = useRef<number | null>(null);
     const prevFirstIdRef = useRef<number | undefined>(undefined);
     const prevScrollHRef = useRef(0);
+    const mountedRef       = useRef(false);
+    const prevMessagesRef  = useRef<DisplayMessage[]>([]);
+
+    const { justArrived, liveUpdate } = useMemo(() => {
+        const prev = prevMessagesRef.current;
+        const empty = { justArrived: new Map<string, number>(), liveUpdate: false };
+        if (!mountedRef.current) return empty;
+
+        const prevFirstKey = prev[0] ? msgKey(prev[0]) : undefined;
+        const currFirstKey = messages[0] ? msgKey(messages[0]) : undefined;
+        const wasPrepend = prev.length > 0 && messages.length > prev.length && prevFirstKey !== currFirstKey;
+        if (wasPrepend) return empty;
+
+        const prevKeys = new Set(prev.map(msgKey));
+        const justArrived = new Map<string, number>();
+        let staggerIndex = 0;
+        for (const m of messages) {
+            const k = msgKey(m);
+            if (!prevKeys.has(k)) justArrived.set(k, staggerIndex++);
+        }
+        return { justArrived, liveUpdate: true };
+    }, [messages]);
+
+    useEffect(() => {
+        prevMessagesRef.current = messages;
+        mountedRef.current = true;
+    }, [messages]);
 
     const hasMoreRef    = useRef(hasMore);
     const loadingRef    = useRef(loadingMore);
@@ -194,9 +226,13 @@ export const MessageList = forwardRef<MessageListHandle, {
                 // color so a busy channel stays readable at a glance.
                 const senderColor = !isDm && !isOwn ? senderTextColor(m.userId) : undefined;
 
+                const staggerIdx = justArrived.get(msgKey(m));
+                const isNew      = staggerIdx !== undefined;
+
                 const rowProps = {
                     m, name, myUsername, isOwn, senderColor,
                     isCont: cont, isPinned: pinned, reactions: msgRx,
+                    isNew, enterDelayMs: (staggerIdx ?? 0) * 40, animateReactions: liveUpdate,
                     editingId, editText,
                     onEditChange: setEditText,
                     onEditSubmit: submitEdit,
