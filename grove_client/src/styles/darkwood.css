@@ -2590,6 +2590,15 @@ input, textarea {
   animation: gv-msg-enter var(--dur-normal) var(--ease-out) both;
 }
 
+@keyframes gv-reaction-pop {
+  from { transform: scale(0.6); opacity: 0.4; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+.dw-reaction.pop {
+  animation: gv-reaction-pop var(--dur-fast) var(--ease-spring) both;
+}
+
 /* ============================================================
    REDUCED MOTION
    ============================================================ */

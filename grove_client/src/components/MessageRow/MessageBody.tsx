@@ -12,12 +12,13 @@ interface MessageBodyProps {
     onEditCancel: () => void;
     reactions:    Record<string, ReactionInfo> | undefined;
     onReact:      (id: number, emoji: string) => void;
+    animateReactions: boolean;
 }
 
 export function MessageBody({
     m, myUsername, isEditing, editText,
     onEditChange, onEditSubmit, onEditCancel,
-    reactions, onReact,
+    reactions, onReact, animateReactions,
 }: MessageBodyProps) {
     const msgReactions = reactions ? Object.entries(reactions) : [];
 
@@ -57,8 +58,8 @@ export function MessageBody({
                 <div className="dw-reactions" aria-label="Reactions">
                     {msgReactions.map(([emoji, info]) => (
                         <button
-                            key={emoji}
-                            className={`dw-reaction${info.byMe ? " mine" : ""}`}
+                            key={animateReactions ? `${emoji}-${info.count}` : emoji}
+                            className={`dw-reaction${info.byMe ? " mine" : ""}${animateReactions ? " pop" : ""}`}
                             onClick={() => m.id !== undefined && onReact(m.id, emoji)}
                             title={info.byMe ? `You reacted ${emoji}` : `React with ${emoji}`}
                         >
