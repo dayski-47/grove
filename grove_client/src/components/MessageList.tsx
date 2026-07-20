@@ -125,7 +125,7 @@ export const MessageList = forwardRef<MessageListHandle, {
 
     useEffect(() => {
         prevMessagesRef.current = messages;
-        mountedRef.current = true;
+        if (messages.length > 0) mountedRef.current = true;
     }, [messages]);
 
     const hasMoreRef    = useRef(hasMore);
