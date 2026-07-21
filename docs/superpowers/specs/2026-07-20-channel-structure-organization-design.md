@@ -16,8 +16,13 @@ no roles, no privacy, no description, no categorization, and — a finding from 
 brainstorm — no member-list UI anywhere in the app at all (the "member count pill"
 and aside panel described in the old `GROVE_HANDOFF.md` V2 design spec were
 aspirational and never built, same as the dead `NavRail.tsx`). Any authenticated
-user can create a channel, join any non-DM channel, and has equal standing to
-delete/pin any message — there's no concept of a channel "belonging" to anyone.
+user can create a channel and join any non-DM channel. Message deletion/editing
+is already author-only (`database::messages::delete_message`/`edit_message`
+both require `user_id = <author>` in their `WHERE` clause) — but pinning is
+already open to any member (`pin_message`/`unpin_message` only check channel
+membership, not authorship of the pinned message). There's no concept of a
+channel "belonging" to anyone, and no way for a member to act on someone
+else's message or remove another member.
 
 This spec adds: channel descriptions, freeform categories (for palette browsing),
 private channels with invite-code joining, and a three-tier role system
@@ -79,13 +84,17 @@ ALTER TABLE channel_members
 - `DELETE /api/channels/:id/members/:user_id` — owner or moderator. A
   moderator cannot kick the owner or another moderator — only the owner can
   remove peers or demote/promote.
-- Existing message delete/pin endpoints gain a permission check: today any
-  member can delete/pin any message; this changes to "own message, or
-  owner/moderator for any message."
+- Message deletion gains an owner/moderator bypass: `delete_message` currently
+  requires `user_id = <author>`; owner/moderator callers get a second query
+  path with no author constraint (still scoped to the given `channel_id`).
+  Editing is unaffected — only the author can edit their own message, in
+  Slack/Discord too. Pinning is unaffected — it's already open to any member
+  and this pass doesn't restrict it.
 
 All role/ownership checks above (`PATCH`, invite-code regeneration, role
-changes, kicking, message delete/pin) are enforced **server-side** on every
-request, regardless of what the client UI currently offers — the UI hiding
+changes, kicking, the moderator message-delete bypass) are enforced
+**server-side** on every request, regardless of what the client UI currently
+offers — the UI hiding
 an action (e.g. a moderator's kebab menu not showing "kick" for another
 moderator) is a UX convenience, never the actual access boundary.
 
@@ -95,8 +104,8 @@ moderator) is a UX convenience, never the actual access boundary.
   join-by-code.
 - `category` gets a plain index since the palette's grouped-browse view
   `GROUP BY category`s on every open (a hot, frequent read).
-- Role checks happen on the hottest paths in the app (every message
-  delete/pin/kick action). Rather than a Postgres round-trip per action,
+- Role checks happen on the hottest paths in the app (every message-delete
+  or kick action). Rather than a Postgres round-trip per action,
   `role` rides in the **existing Redis membership cache** (the same one
   already reloading `channel_members` into Redis on WS connect) —
   `HGET channel:{id}:members {user_id}` returns the role alongside membership
