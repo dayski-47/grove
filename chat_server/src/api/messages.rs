@@ -427,6 +427,37 @@ pub async fn join_by_code(
     Ok(Json(JoinByCodeResponse { channel_id, name }))
 }
 
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct MemberInfo {
+    pub user_id: i64,
+    pub username: String,
+    pub role: String,
+}
+
+pub async fn get_channel_members(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(channel_id): axum::extract::Path<i64>,
+) -> Result<Json<Vec<MemberInfo>>, StatusCode> {
+    assert_channel_member(&state.redis, channel_id, auth.user_id).await?;
+
+    let members = sqlx::query_as::<_, MemberInfo>(
+        "SELECT u.id AS user_id, u.username, cm.role
+         FROM channel_members cm
+         JOIN users u ON u.id = cm.user_id
+         WHERE cm.channel_id = $1
+         ORDER BY
+             CASE cm.role WHEN 'owner' THEN 0 WHEN 'moderator' THEN 1 ELSE 2 END,
+             u.username ASC",
+    )
+    .bind(channel_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(members))
+}
+
 pub async fn get_history(
     auth: AuthenticatedUser,
     State(state): State<Arc<AppState>>,
@@ -1326,6 +1357,62 @@ mod tests {
             !outsider_view.iter().any(|c| c.name == "secret-chan"),
             "non-member does not see the private channel"
         );
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn returns_members_ordered_owner_first(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h'), (2, 'bob', 'b@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&state.db)
+                .await?;
+        sqlx::query("INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 2, 'member'), ($1, 1, 'owner')")
+            .bind(channel_id)
+            .execute(&state.db)
+            .await?;
+        let key = format!("channel:{}:members", channel_id);
+        let mut con = state.redis.clone();
+        let _: () = redis::AsyncCommands::sadd(&mut con, &key, vec![1i64, 2i64])
+            .await
+            .unwrap();
+
+        let result = get_channel_members(
+            AuthenticatedUser { user_id: 1 },
+            State(state),
+            axum::extract::Path(channel_id),
+        )
+        .await;
+        let Ok(Json(members)) = result else {
+            panic!("should succeed")
+        };
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0].username, "alice");
+        assert_eq!(members[0].role, "owner");
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn non_member_cannot_list_members(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (3, 'carol', 'c@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&state.db)
+                .await?;
+
+        let result = get_channel_members(
+            AuthenticatedUser { user_id: 3 },
+            State(state),
+            axum::extract::Path(channel_id),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), StatusCode::FORBIDDEN);
         Ok(())
     }
 }

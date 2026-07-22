@@ -1,9 +1,9 @@
 use super::auth::{login, logout, register};
 use super::messages::{
-    add_friend, create_channel, get_channel_online, get_channel_pins, get_channel_reactions,
-    get_history, get_user, join_by_code, join_channel, list_channels, list_dms, list_friends,
-    open_dm, pin_message, regenerate_invite_code, remove_friend, search_users, unpin_message,
-    update_channel, update_my_profile,
+    add_friend, create_channel, get_channel_members, get_channel_online, get_channel_pins,
+    get_channel_reactions, get_history, get_user, join_by_code, join_channel, list_channels,
+    list_dms, list_friends, open_dm, pin_message, regenerate_invite_code, remove_friend,
+    search_users, unpin_message, update_channel, update_my_profile,
 };
 use crate::api::AppState;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -35,6 +35,7 @@ pub async fn run_rest_server(
             "/api/channels/{id}/invite-code/regenerate",
             post(regenerate_invite_code),
         )
+        .route("/api/channels/{id}/members", get(get_channel_members))
         .route("/api/users/{id}", get(get_user))
         .route("/api/users/search", get(search_users))
         .route("/api/users/me", axum::routing::put(update_my_profile))
