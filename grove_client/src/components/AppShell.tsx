@@ -81,6 +81,8 @@ export function AppShell({
     const [paletteOpen, setPaletteOpen]   = useState(false);
     const [paletteQuery, setPaletteQuery] = useState("");
     const [paletteIdx, setPaletteIdx]     = useState(0);
+    const [createCategory, setCreateCategory] = useState("");
+    const [createPrivate, setCreatePrivate]   = useState(false);
 
     /* Data */
     const [channels, setChannels]       = useState<Channel[]>([]);
@@ -552,8 +554,28 @@ export function AppShell({
         const name = paletteQuery.trim().replace(/^#/, "");
         if (!name) return;
         try {
-            const res = await createChannel(name, token);
-            setChannels(prev => [...prev, { id: res.channel_id, name }]);
+            const res = await createChannel(name, token, {
+                category:   createCategory.trim() || undefined,
+                is_private: createPrivate,
+            });
+            setChannels(prev => [...prev, {
+                id: res.channel_id, name,
+                category: createCategory.trim() || undefined,
+                is_private: createPrivate,
+            }]);
+            if (res.invite_code) {
+                setToasts(prev => [...prev, {
+                    id:          crypto.randomUUID(),
+                    channelId:   res.channel_id,
+                    channelName: name,
+                    kind:        "channel",
+                    senderName:  "Channel created",
+                    preview:     `Invite code: ${res.invite_code}`,
+                    leaving:     false,
+                }]);
+            }
+            setCreateCategory("");
+            setCreatePrivate(false);
             openChannel(res.channel_id, name, "channel");
         } catch { /* ignore */ }
     }

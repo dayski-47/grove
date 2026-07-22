@@ -17,7 +17,8 @@ export interface LoginRequest {
 }
 
 export interface CreateChannelResponse {
-    channel_id: number;
+    channel_id:  number;
+    invite_code: string | null;
 }
 
 export interface DmInfo {
