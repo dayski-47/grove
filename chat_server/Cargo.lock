@@ -288,6 +288,7 @@ dependencies = [
  "futures-util",
  "jsonwebtoken",
  "mimalloc",
+ "rand 0.9.4",
  "redis",
  "rustls",
  "serde",
