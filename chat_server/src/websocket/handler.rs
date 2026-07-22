@@ -35,7 +35,9 @@ pub async fn handle_connection(
         .execute(&app_state.db)
         .await;
 
-    if let Err(e) = seed_redis_membership(user_id, &app_state.db, &app_state.redis).await {
+    if let Err(e) =
+        seed_redis_membership(user_id, &app_state.db, &app_state.redis, &app_state.roles).await
+    {
         eprintln!("warn: redis membership seed failed for {user_id}: {e}");
     }
     app_state.presence.mark_online(user_id).await?;
@@ -137,18 +139,20 @@ async fn seed_redis_membership(
     user_id: u64,
     db: &sqlx::PgPool,
     redis: &ConnectionManager,
+    roles: &crate::cache::roles::RoleCache,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut con = redis.clone();
 
-    // Regular channels the user has joined
-    let channel_ids: Vec<i64> =
-        sqlx::query_scalar("SELECT channel_id FROM channel_members WHERE user_id = $1")
+    // Regular channels the user has joined, with their role.
+    let memberships: Vec<(i64, String)> =
+        sqlx::query_as("SELECT channel_id, role FROM channel_members WHERE user_id = $1")
             .bind(user_id as i64)
             .fetch_all(db)
             .await?;
-    for cid in channel_ids {
+    for (cid, role) in memberships {
         let key = format!("channel:{}:members", cid);
         let _: () = con.sadd(&key, user_id as i64).await?;
+        roles.set_role(cid, user_id as i64, &role).await?;
     }
 
     // DM channels — both parties must be in the Redis set
