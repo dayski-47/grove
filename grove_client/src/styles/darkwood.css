@@ -2613,6 +2613,222 @@ input, textarea {
 }
 
 /* ============================================================
+   CHANNEL SETTINGS MODAL
+   ============================================================ */
+
+.dw-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: var(--z-modal);
+}
+
+.dw-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(480px, calc(100vw - 32px));
+  max-height: min(600px, calc(100vh - 64px));
+  overflow-y: auto;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float);
+  z-index: calc(var(--z-modal) + 1);
+  padding: var(--sp-6);
+}
+
+.dw-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-4);
+}
+
+.dw-modal-title {
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.dw-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--text-xl);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.dw-modal-close:hover { color: var(--text-primary); }
+
+.dw-modal-tabs {
+  display: flex;
+  gap: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--sp-4);
+}
+
+.dw-modal-tab {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  padding: var(--sp-2) 0;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.dw-modal-tab.active {
+  color: var(--leaf-bright);
+  border-bottom-color: var(--leaf-bright);
+}
+
+.dw-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.dw-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.dw-modal-field-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dw-modal-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dw-modal-textarea, .dw-modal-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.dw-modal-textarea:focus, .dw-modal-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.dw-modal-code {
+  font-family: var(--font-mono);
+  background: var(--surface-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-xs);
+  color: var(--leaf-bright);
+}
+
+.dw-modal-btn-sm {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+}
+
+.dw-modal-btn-primary {
+  background: var(--leaf);
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text-inverse);
+  font-weight: 500;
+  padding: var(--sp-2) var(--sp-4);
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.dw-modal-btn-primary:hover { background: var(--leaf-bright); }
+
+.dw-modal-members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.dw-modal-member-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2);
+  border-radius: var(--r-sm);
+  position: relative;
+}
+
+.dw-modal-member-row:hover { background: var(--surface-2); }
+
+.dw-modal-member-name {
+  flex-grow: 1;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.dw-modal-role-badge {
+  font-size: var(--text-xs);
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-full);
+  color: var(--text-muted);
+  background: var(--surface-3);
+}
+
+.dw-modal-role-owner   { color: var(--leaf-bright); }
+.dw-modal-role-moderator { color: var(--text-secondary); }
+
+.dw-modal-kebab {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-md);
+}
+
+.dw-modal-kebab:hover { color: var(--text-primary); }
+
+.dw-modal-menu-popover {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-panel);
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+}
+
+.dw-modal-menu-popover button {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+}
+
+.dw-modal-menu-popover button:hover { background: var(--surface-3); }
+
+.dw-modal-danger { color: var(--danger) !important; }
+
+/* ============================================================
    REDUCED MOTION
    ============================================================ */
 
