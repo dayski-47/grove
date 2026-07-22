@@ -458,6 +458,53 @@ pub async fn get_channel_members(
     Ok(Json(members))
 }
 
+#[derive(Deserialize)]
+pub struct UpdateMemberRoleRequest {
+    pub role: String,
+}
+
+pub async fn update_member_role(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path((channel_id, target_user_id)): axum::extract::Path<(i64, i64)>,
+    Json(req): Json<UpdateMemberRoleRequest>,
+) -> Result<StatusCode, StatusCode> {
+    if req.role != "moderator" && req.role != "member" {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let caller_role = state.roles.get_role(channel_id, auth.user_id).await;
+    if caller_role != "owner" {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if target_user_id == auth.user_id {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let rows = sqlx::query(
+        "UPDATE channel_members SET role = $1 WHERE channel_id = $2 AND user_id = $3 AND role != 'owner'",
+    )
+    .bind(&req.role)
+    .bind(channel_id)
+    .bind(target_user_id)
+    .execute(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .rows_affected();
+
+    if rows == 0 {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    state
+        .roles
+        .set_role(channel_id, target_user_id, &req.role)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
+}
+
 pub async fn get_history(
     auth: AuthenticatedUser,
     State(state): State<Arc<AppState>>,
@@ -1413,6 +1460,77 @@ mod tests {
         )
         .await;
         assert_eq!(result.unwrap_err(), StatusCode::FORBIDDEN);
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn owner_can_promote_member_to_moderator(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h'), (2, 'bob', 'b@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&state.db)
+                .await?;
+        sqlx::query("INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 1, 'owner'), ($1, 2, 'member')")
+            .bind(channel_id)
+            .execute(&state.db)
+            .await?;
+        state.roles.set_role(channel_id, 1, "owner").await.unwrap();
+
+        let result = update_member_role(
+            AuthenticatedUser { user_id: 1 },
+            State(state.clone()),
+            axum::extract::Path((channel_id, 2)),
+            Json(UpdateMemberRoleRequest {
+                role: "moderator".to_string(),
+            }),
+        )
+        .await;
+        assert_eq!(result, Ok(StatusCode::OK));
+
+        let role: String = sqlx::query_scalar(
+            "SELECT role FROM channel_members WHERE channel_id = $1 AND user_id = 2",
+        )
+        .bind(channel_id)
+        .fetch_one(&state.db)
+        .await?;
+        assert_eq!(role, "moderator");
+        assert_eq!(state.roles.get_role(channel_id, 2).await, "moderator");
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn moderator_cannot_promote_anyone(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (2, 'bob', 'b@x.com', 'h'), (3, 'carol', 'c@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&state.db)
+                .await?;
+        sqlx::query("INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 2, 'moderator'), ($1, 3, 'member')")
+            .bind(channel_id)
+            .execute(&state.db)
+            .await?;
+        state
+            .roles
+            .set_role(channel_id, 2, "moderator")
+            .await
+            .unwrap();
+
+        let result = update_member_role(
+            AuthenticatedUser { user_id: 2 },
+            State(state),
+            axum::extract::Path((channel_id, 3)),
+            Json(UpdateMemberRoleRequest {
+                role: "moderator".to_string(),
+            }),
+        )
+        .await;
+        assert_eq!(result, Err(StatusCode::FORBIDDEN));
         Ok(())
     }
 }
