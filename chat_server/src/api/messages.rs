@@ -1118,4 +1118,40 @@ mod tests {
         assert_eq!(result.unwrap_err(), StatusCode::BAD_REQUEST);
         Ok(())
     }
+
+    #[sqlx::test]
+    async fn non_owner_cannot_regenerate_invite_code(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (2, 'bob', 'b@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 = sqlx::query_scalar(
+            "INSERT INTO channels (name, is_private, invite_code) VALUES ('secret', TRUE, 'oldcode123') RETURNING id",
+        )
+        .fetch_one(&state.db)
+        .await?;
+        sqlx::query(
+            "INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 2, 'member')",
+        )
+        .bind(channel_id)
+        .execute(&state.db)
+        .await?;
+        // No role cached — RoleCache::get_role defaults to "member", correctly denying access.
+
+        let result = regenerate_invite_code(
+            AuthenticatedUser { user_id: 2 },
+            State(state.clone()),
+            axum::extract::Path(channel_id),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), StatusCode::FORBIDDEN);
+
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT invite_code FROM channels WHERE id = $1")
+                .bind(channel_id)
+                .fetch_one(&state.db)
+                .await?;
+        assert_eq!(stored, Some("oldcode123".to_string()));
+        Ok(())
+    }
 }
