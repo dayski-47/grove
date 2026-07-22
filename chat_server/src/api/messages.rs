@@ -368,6 +368,62 @@ pub async fn regenerate_invite_code(
     }))
 }
 
+#[derive(Deserialize)]
+pub struct JoinByCodeRequest {
+    pub code: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct JoinByCodeResponse {
+    pub channel_id: i64,
+    pub name: String,
+}
+
+pub async fn join_by_code(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<JoinByCodeRequest>,
+) -> Result<Json<JoinByCodeResponse>, StatusCode> {
+    let code = req.code.trim();
+    if code.is_empty() || code.len() > 12 {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let channel: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, name FROM channels WHERE invite_code = $1 AND is_private = TRUE",
+    )
+    .bind(code)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Generic 404 either way — never reveal whether a code format was ever valid.
+    let (channel_id, name) = channel.ok_or(StatusCode::NOT_FOUND)?;
+
+    sqlx::query(
+        "INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING",
+    )
+    .bind(channel_id)
+    .bind(auth.user_id)
+    .execute(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut con = state.redis.clone();
+    let key = format!("channel:{}:members", channel_id);
+    let _: () = con
+        .sadd(&key, auth.user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .roles
+        .set_role(channel_id, auth.user_id, "member")
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(JoinByCodeResponse { channel_id, name }))
+}
+
 pub async fn get_history(
     auth: AuthenticatedUser,
     State(state): State<Arc<AppState>>,
@@ -1152,6 +1208,60 @@ mod tests {
                 .fetch_one(&state.db)
                 .await?;
         assert_eq!(stored, Some("oldcode123".to_string()));
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn valid_code_joins_the_channel(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (2, 'bob', 'b@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 = sqlx::query_scalar(
+            "INSERT INTO channels (name, is_private, invite_code) VALUES ('secret', TRUE, 'joincode12') RETURNING id",
+        )
+        .fetch_one(&state.db)
+        .await?;
+
+        let result = join_by_code(
+            AuthenticatedUser { user_id: 2 },
+            State(state.clone()),
+            Json(JoinByCodeRequest {
+                code: "joincode12".to_string(),
+            }),
+        )
+        .await;
+        let Ok(Json(resp)) = result else {
+            panic!("join_by_code should succeed");
+        };
+        assert_eq!(resp.channel_id, channel_id);
+
+        let role: String = sqlx::query_scalar(
+            "SELECT role FROM channel_members WHERE channel_id = $1 AND user_id = 2",
+        )
+        .bind(channel_id)
+        .fetch_one(&state.db)
+        .await?;
+        assert_eq!(role, "member");
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn invalid_code_returns_generic_not_found(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (2, 'bob', 'b@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+
+        let result = join_by_code(
+            AuthenticatedUser { user_id: 2 },
+            State(state),
+            Json(JoinByCodeRequest {
+                code: "doesnotexist".to_string(),
+            }),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);
         Ok(())
     }
 }
