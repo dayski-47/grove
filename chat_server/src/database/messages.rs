@@ -125,6 +125,28 @@ pub async fn delete_message(
     Ok(if rows == 0 { None } else { Some(channel_id) })
 }
 
+/// Soft-deletes a message regardless of author — for owner/moderator use only;
+/// the caller is responsible for verifying the role before calling this.
+/// Returns Some(channel_id) on success, None if the message doesn't exist
+/// in this channel or is already deleted.
+pub async fn delete_message_as_moderator(
+    pool: &PgPool,
+    message_id: i64,
+    channel_id: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    let rows = sqlx::query(
+        "UPDATE messages SET deleted_at = NOW(), text = ''
+         WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL",
+    )
+    .bind(message_id)
+    .bind(channel_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    Ok(if rows == 0 { None } else { Some(channel_id) })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,6 +172,67 @@ mod tests {
             .fetch_one(&pool)
             .await?;
         assert_eq!(text, "hello");
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn delete_message_as_moderator_removes_any_authors_message(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('test') RETURNING id")
+                .fetch_one(&pool)
+                .await?;
+        let author_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (username, email, password_hash) VALUES ('alice', 'a@x.com', 'h') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await?;
+        let msg_id = insert_message(&pool, channel_id as u64, author_id as u64, "hi", 1000)
+            .await
+            .unwrap();
+
+        // A different user (the moderator) deletes it — delete_message (author-only)
+        // would reject this; delete_message_as_moderator does not check authorship.
+        let result = delete_message_as_moderator(&pool, msg_id as i64, channel_id).await?;
+        assert!(result.is_some());
+
+        let deleted: bool =
+            sqlx::query_scalar("SELECT deleted_at IS NOT NULL FROM messages WHERE id = $1")
+                .bind(msg_id as i64)
+                .fetch_one(&pool)
+                .await?;
+        assert!(deleted);
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn regular_delete_message_still_requires_authorship(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('test') RETURNING id")
+                .fetch_one(&pool)
+                .await?;
+        let author_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (username, email, password_hash) VALUES ('alice', 'a@x.com', 'h') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await?;
+        let other_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (username, email, password_hash) VALUES ('bob', 'b@x.com', 'h') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await?;
+        let msg_id = insert_message(&pool, channel_id as u64, author_id as u64, "hi", 1000)
+            .await
+            .unwrap();
+
+        let result = delete_message(&pool, msg_id as i64, channel_id, other_id).await?;
+        assert!(
+            result.is_none(),
+            "non-author delete_message call must be rejected"
+        );
         Ok(())
     }
 }

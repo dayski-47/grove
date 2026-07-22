@@ -385,14 +385,27 @@ pub async fn handle_binary_message(
             let Ok(payload) = serde_json::from_str::<DeletePayload>(&text) else {
                 return Ok(());
             };
-            let Some(_) = crate::database::messages::delete_message(
-                &app_state.db,
-                payload.message_id,
-                channel_id as i64,
-                user_id as i64,
-            )
-            .await?
-            else {
+            let role = app_state
+                .roles
+                .get_role(channel_id as i64, user_id as i64)
+                .await;
+            let deleted = if role == "owner" || role == "moderator" {
+                crate::database::messages::delete_message_as_moderator(
+                    &app_state.db,
+                    payload.message_id,
+                    channel_id as i64,
+                )
+                .await?
+            } else {
+                crate::database::messages::delete_message(
+                    &app_state.db,
+                    payload.message_id,
+                    channel_id as i64,
+                    user_id as i64,
+                )
+                .await?
+            };
+            let Some(_) = deleted else {
                 return Ok(());
             };
             let broadcast_text =
