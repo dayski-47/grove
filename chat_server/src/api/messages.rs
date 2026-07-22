@@ -330,6 +330,44 @@ pub async fn update_channel(
     Ok(Json(UpdateChannelResponse { invite_code }))
 }
 
+#[derive(Debug, Serialize)]
+pub struct RegenerateInviteCodeResponse {
+    pub invite_code: String,
+}
+
+pub async fn regenerate_invite_code(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(channel_id): axum::extract::Path<i64>,
+) -> Result<Json<RegenerateInviteCodeResponse>, StatusCode> {
+    let role = state.roles.get_role(channel_id, auth.user_id).await;
+    if role != "owner" {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let is_private: bool = sqlx::query_scalar("SELECT is_private FROM channels WHERE id = $1")
+        .bind(channel_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if !is_private {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let new_code = crate::api::invite_code::generate_invite_code();
+    sqlx::query("UPDATE channels SET invite_code = $1 WHERE id = $2")
+        .bind(&new_code)
+        .bind(channel_id)
+        .execute(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(RegenerateInviteCodeResponse {
+        invite_code: new_code,
+    }))
+}
+
 pub async fn get_history(
     auth: AuthenticatedUser,
     State(state): State<Arc<AppState>>,
@@ -1007,6 +1045,77 @@ mod tests {
             panic!("update_channel should succeed");
         };
         assert!(resp.invite_code.is_some());
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn owner_can_regenerate_invite_code_for_private_channel(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 = sqlx::query_scalar(
+            "INSERT INTO channels (name, is_private, invite_code) VALUES ('secret', TRUE, 'oldcode123') RETURNING id",
+        )
+        .fetch_one(&state.db)
+        .await?;
+        sqlx::query(
+            "INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 1, 'owner')",
+        )
+        .bind(channel_id)
+        .execute(&state.db)
+        .await?;
+        state.roles.set_role(channel_id, 1, "owner").await.unwrap();
+
+        let result = regenerate_invite_code(
+            AuthenticatedUser { user_id: 1 },
+            State(state.clone()),
+            axum::extract::Path(channel_id),
+        )
+        .await;
+        let Ok(Json(resp)) = result else {
+            panic!("regenerate_invite_code should succeed");
+        };
+        assert_ne!(resp.invite_code, "oldcode123");
+
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT invite_code FROM channels WHERE id = $1")
+                .bind(channel_id)
+                .fetch_one(&state.db)
+                .await?;
+        assert_eq!(stored, Some(resp.invite_code));
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn cannot_regenerate_invite_code_for_public_channel(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&state.db)
+                .await?;
+        sqlx::query(
+            "INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 1, 'owner')",
+        )
+        .bind(channel_id)
+        .execute(&state.db)
+        .await?;
+        state.roles.set_role(channel_id, 1, "owner").await.unwrap();
+
+        let result = regenerate_invite_code(
+            AuthenticatedUser { user_id: 1 },
+            State(state),
+            axum::extract::Path(channel_id),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), StatusCode::BAD_REQUEST);
         Ok(())
     }
 }
