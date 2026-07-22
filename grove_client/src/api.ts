@@ -137,10 +137,11 @@ export function updateMemberRole(
 }
 
 export async function kickMember(channelId: number, userId: number, token: string): Promise<void> {
-    await fetch(`${API_BASE}/api/channels/${channelId}/members/${userId}`, {
+    const res = await fetch(`${API_BASE}/api/channels/${channelId}/members/${userId}`, {
         method:  "DELETE",
         headers: { Authorization: `Bearer ${token}` },
     });
+    if (!res.ok) throw new Error(`Kick member failed: ${res.status}`);
 }
 
 export function joinChannel(
