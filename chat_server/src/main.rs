@@ -33,12 +33,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Single ConnectionManager shared across all subsystems — each clone is an Arc bump.
     let redis_conn = cache::connect_redis(&redis_url).await?;
     let presence = cache::presence::PresenceTracker::new(redis_conn.clone());
+    let roles = cache::roles::RoleCache::new(redis_conn.clone());
 
     let app_state = api::AppState {
         db: db_pool,
         redis: redis_conn,
         jwt_secret,
         presence,
+        roles,
     };
     let app_state_ws = Arc::new(app_state.clone());
 

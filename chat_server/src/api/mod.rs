@@ -7,6 +7,7 @@ pub mod validation;
 
 use crate::api::auth::Claims;
 use crate::cache::presence::PresenceTracker;
+use crate::cache::roles::RoleCache;
 use axum::extract::FromRequestParts;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
@@ -22,6 +23,8 @@ pub struct AppState {
     pub redis: ConnectionManager,
     pub jwt_secret: String,
     pub presence: PresenceTracker,
+    #[allow(dead_code)]
+    pub roles: RoleCache,
 }
 
 pub struct AuthenticatedUser {

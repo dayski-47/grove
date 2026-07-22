@@ -1,5 +1,6 @@
 pub mod batch;
 pub mod presence;
+pub mod roles;
 
 use redis::{Client, RedisError, aio::ConnectionManager};
 
