@@ -11,6 +11,8 @@ import type {
     DmInfo,
     FriendInfo,
     HistoricMessage,
+    MemberInfo,
+    ChannelRole,
 } from "./types";
 
 async function postJson<T>(
@@ -52,19 +54,93 @@ export function login(req: LoginRequest): Promise<AuthResponse> {
 }
 
 export interface ChannelInfo {
-  id: number;
-  name: string;
+  id:           number;
+  name:         string;
+  description?: string;
+  category?:    string;
+  is_private:   boolean;
 }
 
 export function createChannel(
     name: string,
-    token: string
+    token: string,
+    options?: { description?: string; category?: string; is_private?: boolean },
     ): Promise<CreateChannelResponse> {
     return postJson<CreateChannelResponse>(
         "/api/channels/create",
-        { name },
+        {
+            name,
+            description: options?.description,
+            category:    options?.category,
+            is_private:  options?.is_private ?? false,
+        },
         token
     );
+}
+
+export function updateChannel(
+    channelId: number,
+    updates: { description?: string; category?: string; is_private?: boolean },
+    token: string,
+): Promise<{ invite_code: string | null }> {
+    return fetch(`${API_BASE}/api/channels/${channelId}`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body:    JSON.stringify(updates),
+    }).then(async res => {
+        if (!res.ok) throw new Error(`Update channel failed: ${res.status}`);
+        return res.json() as Promise<{ invite_code: string | null }>;
+    });
+}
+
+export function regenerateInviteCode(
+    channelId: number,
+    token: string,
+): Promise<{ invite_code: string }> {
+    return postJson<{ invite_code: string }>(
+        `/api/channels/${channelId}/invite-code/regenerate`,
+        {},
+        token,
+    );
+}
+
+export function joinByCode(
+    code: string,
+    token: string,
+): Promise<{ channel_id: number; name: string }> {
+    return postJson<{ channel_id: number; name: string }>(
+        "/api/channels/join-by-code",
+        { code },
+        token,
+    );
+}
+
+export async function getChannelMembers(channelId: number, token: string): Promise<MemberInfo[]> {
+    const res = await fetch(`${API_BASE}/api/channels/${channelId}/members`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to fetch members: ${res.status}`);
+    return (await res.json()) as MemberInfo[];
+}
+
+export function updateMemberRole(
+    channelId: number,
+    userId: number,
+    role: ChannelRole,
+    token: string,
+): Promise<void> {
+    return postJson<void>(
+        `/api/channels/${channelId}/members/${userId}/role`,
+        { role },
+        token,
+    );
+}
+
+export async function kickMember(channelId: number, userId: number, token: string): Promise<void> {
+    await fetch(`${API_BASE}/api/channels/${channelId}/members/${userId}`, {
+        method:  "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+    });
 }
 
 export function joinChannel(

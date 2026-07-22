@@ -21,7 +21,13 @@ import { DecryptReveal } from "./motion/DecryptReveal";
 
 /* ── Types ───────────────────────────────────────────────── */
 
-interface Channel { id: number; name: string; }
+interface Channel {
+    id:          number;
+    name:        string;
+    description?: string;
+    category?:    string;
+    is_private:   boolean;
+}
 
 type EmojiMap    = Record<string, { count: number; byMe: boolean }>;
 type ReactionsMap = Record<number, EmojiMap>;
@@ -415,7 +421,9 @@ export function AppShell({
         socket.connect();
         socketRef.current = socket;
 
-        listChannels(token).then(chs => setChannels(chs.map(c => ({ id: c.id, name: c.name })))).catch(console.error);
+        listChannels(token).then(chs => setChannels(chs.map(c => ({
+            id: c.id, name: c.name, description: c.description, category: c.category, is_private: c.is_private,
+        })))).catch(console.error);
         listDms(token).then(list => { setDms(list); list.forEach(d => resolveUsername(d.partner_id, d.partner_name)); }).catch(console.error);
         listFriends(token).then(setFriends).catch(console.error);
         resolveProfile(userId);

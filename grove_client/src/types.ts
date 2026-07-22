@@ -107,3 +107,11 @@ export interface SignalingAnswer   { type: "CallAnswer";   from: number; to: num
 export interface SignalingIce      { type: "IceCandidate"; from: number; to: number; candidate: string; }
 export interface SignalingHangup   { type: "CallHangup";   from: number; to: number; }
 export type SignalingMessage = SignalingOffer | SignalingAnswer | SignalingIce | SignalingHangup;
+
+export type ChannelRole = "owner" | "moderator" | "member";
+
+export interface MemberInfo {
+    user_id:  number;
+    username: string;
+    role:     ChannelRole;
+}
