@@ -50,11 +50,16 @@ pub struct JoinChannelRequest {
 #[derive(Deserialize)]
 pub struct CreateChannelRequest {
     pub name: String,
+    pub description: Option<String>,
+    pub category: Option<String>,
+    #[serde(default)]
+    pub is_private: bool,
 }
 
 #[derive(Serialize)]
 pub struct CreateChannelResponse {
     pub channel_id: i64,
+    pub invite_code: Option<String>,
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -170,8 +175,18 @@ pub async fn create_channel(
     Json(req): Json<CreateChannelRequest>,
 ) -> Result<Json<CreateChannelResponse>, (StatusCode, String)> {
     validate_channel_name(&req.name)?;
+    let description = req
+        .description
+        .map(|d| d.chars().take(500).collect::<String>());
+    let category = req
+        .category
+        .map(|c| c.chars().take(100).collect::<String>());
+    let invite_code = if req.is_private {
+        Some(crate::api::invite_code::generate_invite_code())
+    } else {
+        None
+    };
 
-    // Both DB writes in one transaction: if either fails the channel doesn't exist.
     let mut tx = state.db.begin().await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -179,20 +194,26 @@ pub async fn create_channel(
         )
     })?;
 
-    let channel_id: i64 =
-        sqlx::query_scalar("INSERT INTO channels (name) VALUES ($1) RETURNING id")
-            .bind(req.name.trim())
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|_| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Server error".to_string(),
-                )
-            })?;
+    let channel_id: i64 = sqlx::query_scalar(
+        "INSERT INTO channels (name, description, category, is_private, invite_code)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    )
+    .bind(req.name.trim())
+    .bind(&description)
+    .bind(&category)
+    .bind(req.is_private)
+    .bind(&invite_code)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Server error".to_string(),
+        )
+    })?;
 
     sqlx::query(
-        "INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, $2, 'owner') ON CONFLICT DO NOTHING",
     )
     .bind(channel_id)
     .bind(auth.user_id)
@@ -212,7 +233,7 @@ pub async fn create_channel(
         )
     })?;
 
-    // Seed Redis membership after successful commit.
+    // Seed Redis membership + role after successful commit.
     let mut con = state.redis.clone();
     let key = format!("channel:{}:members", channel_id);
     let _: () = con.sadd(&key, auth.user_id).await.map_err(|_| {
@@ -221,8 +242,21 @@ pub async fn create_channel(
             "Server error".to_string(),
         )
     })?;
+    state
+        .roles
+        .set_role(channel_id, auth.user_id, "owner")
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Server error".to_string(),
+            )
+        })?;
 
-    Ok(Json(CreateChannelResponse { channel_id }))
+    Ok(Json(CreateChannelResponse {
+        channel_id,
+        invite_code,
+    }))
 }
 
 pub async fn get_history(
@@ -717,4 +751,78 @@ pub async fn unpin_message(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(StatusCode::OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn make_app_state(pool: sqlx::PgPool) -> Arc<AppState> {
+        let redis_url =
+            std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
+        let redis = crate::cache::connect_redis(&redis_url)
+            .await
+            .expect("Redis must be reachable for this test — start it via docker-compose.prod.yml");
+        Arc::new(AppState {
+            db: pool,
+            redis: redis.clone(),
+            jwt_secret: "test-secret-at-least-32-bytes-long!!".to_string(),
+            presence: crate::cache::presence::PresenceTracker::new(redis.clone()),
+            roles: crate::cache::roles::RoleCache::new(redis),
+        })
+    }
+
+    #[sqlx::test]
+    async fn creates_a_public_channel_with_no_invite_code(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        let auth = AuthenticatedUser { user_id: 1 };
+        // Seed a user row so the FK on channel_members is satisfiable.
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+
+        let req = CreateChannelRequest {
+            name: "general".to_string(),
+            description: Some("General chat".to_string()),
+            category: Some("Community".to_string()),
+            is_private: false,
+        };
+        let result = create_channel(auth, State(state.clone()), Json(req)).await;
+        let Ok(Json(resp)) = result else {
+            panic!("create_channel should succeed");
+        };
+        assert!(resp.invite_code.is_none());
+
+        let role: String = sqlx::query_scalar(
+            "SELECT role FROM channel_members WHERE channel_id = $1 AND user_id = 1",
+        )
+        .bind(resp.channel_id)
+        .fetch_one(&state.db)
+        .await?;
+        assert_eq!(role, "owner");
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn creates_a_private_channel_with_an_invite_code(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        let auth = AuthenticatedUser { user_id: 1 };
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+
+        let req = CreateChannelRequest {
+            name: "secret-plans".to_string(),
+            description: None,
+            category: None,
+            is_private: true,
+        };
+        let result = create_channel(auth, State(state), Json(req)).await;
+        let Ok(Json(resp)) = result else {
+            panic!("create_channel should succeed");
+        };
+        assert!(resp.invite_code.is_some());
+        assert_eq!(resp.invite_code.unwrap().len(), 10);
+        Ok(())
+    }
 }

@@ -6,7 +6,6 @@ const CODE_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
 const CODE_LEN: usize = 10;
 
 /// Generates a random, URL-safe invite code (10 alphanumeric characters).
-#[allow(dead_code)]
 pub fn generate_invite_code() -> String {
     let mut rng = rand::rng();
     (0..CODE_LEN)
