@@ -9,9 +9,10 @@ type EmojiMap     = Record<string, { count: number; byMe: boolean }>;
 type ReactionsMap = Record<number, EmojiMap>;
 
 interface ChatViewProps {
-    channelId:    number;
-    channelName:  string;
-    isDm:         boolean;
+    channelId:      number;
+    channelName:    string;
+    isDm:           boolean;
+    onOpenSettings?: () => void;
     messages:     DisplayMessage[];
     usernames:    Record<number, string>;
     currentUserId: number;
@@ -35,7 +36,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({
-    channelId, channelName, isDm,
+    channelId, channelName, isDm, onOpenSettings,
     messages, usernames, currentUserId, myUsername,
     typingNames, connected,
     hasMore, loadingMore,
@@ -83,6 +84,15 @@ export function ChatView({
                     {isDm ? "@" : "#"}
                 </span>
                 <h2 className="dw-chat-name">{channelName}</h2>
+                {!isDm && onOpenSettings && (
+                    <button
+                        className="dw-chat-settings-btn"
+                        onClick={onOpenSettings}
+                        aria-label="Channel settings"
+                    >
+                        ⚙
+                    </button>
+                )}
             </header>
 
             {/* Messages — keyed by channelId so refs/state reset on channel switch */}

@@ -2828,6 +2828,24 @@ input, textarea {
 
 .dw-modal-danger { color: var(--danger) !important; }
 
+.dw-chat-settings-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  transition: transform var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.dw-chat-settings-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-2);
+  transform: scale(1.05);
+}
+
 /* ============================================================
    REDUCED MOTION
    ============================================================ */
