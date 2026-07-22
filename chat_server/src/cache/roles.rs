@@ -25,7 +25,6 @@ impl RoleCache {
     /// Defaults to "member" on cache miss or Redis error — least-privilege
     /// fallback, matching this project's existing fail-closed security posture
     /// (see the JWT blocklist check in `api/mod.rs`).
-    #[allow(dead_code)]
     pub async fn get_role(&self, channel_id: i64, user_id: i64) -> String {
         let mut con = self.conn.clone();
         con.hget::<_, _, Option<String>>(format!("channel:{}:roles", channel_id), user_id)

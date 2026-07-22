@@ -259,6 +259,77 @@ pub async fn create_channel(
     }))
 }
 
+#[derive(Deserialize)]
+pub struct UpdateChannelRequest {
+    pub description: Option<String>,
+    pub category: Option<String>,
+    pub is_private: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateChannelResponse {
+    pub invite_code: Option<String>,
+}
+
+pub async fn update_channel(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(channel_id): axum::extract::Path<i64>,
+    Json(req): Json<UpdateChannelRequest>,
+) -> Result<Json<UpdateChannelResponse>, StatusCode> {
+    let role = state.roles.get_role(channel_id, auth.user_id).await;
+    if role != "owner" {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let current_private: bool = sqlx::query_scalar("SELECT is_private FROM channels WHERE id = $1")
+        .bind(channel_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let next_private = req.is_private.unwrap_or(current_private);
+    let invite_code = if next_private && !current_private {
+        Some(crate::api::invite_code::generate_invite_code())
+    } else if !next_private {
+        None
+    } else {
+        // Staying private and no explicit toggle — leave the existing code alone.
+        sqlx::query_scalar("SELECT invite_code FROM channels WHERE id = $1")
+            .bind(channel_id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    };
+
+    let description = req
+        .description
+        .map(|d| d.chars().take(500).collect::<String>());
+    let category = req
+        .category
+        .map(|c| c.chars().take(100).collect::<String>());
+
+    sqlx::query(
+        "UPDATE channels SET
+            description = COALESCE($1, description),
+            category    = COALESCE($2, category),
+            is_private  = $3,
+            invite_code = $4
+         WHERE id = $5",
+    )
+    .bind(&description)
+    .bind(&category)
+    .bind(next_private)
+    .bind(&invite_code)
+    .bind(channel_id)
+    .execute(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(UpdateChannelResponse { invite_code }))
+}
+
 pub async fn get_history(
     auth: AuthenticatedUser,
     State(state): State<Arc<AppState>>,
@@ -823,6 +894,119 @@ mod tests {
         };
         assert!(resp.invite_code.is_some());
         assert_eq!(resp.invite_code.unwrap().len(), 10);
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn owner_can_update_description_and_category(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&state.db)
+                .await?;
+        sqlx::query(
+            "INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 1, 'owner')",
+        )
+        .bind(channel_id)
+        .execute(&state.db)
+        .await?;
+        state.roles.set_role(channel_id, 1, "owner").await.unwrap();
+
+        let req = UpdateChannelRequest {
+            description: Some("Updated description".to_string()),
+            category: Some("Ops".to_string()),
+            is_private: None,
+        };
+        let result = update_channel(
+            AuthenticatedUser { user_id: 1 },
+            State(state.clone()),
+            axum::extract::Path(channel_id),
+            Json(req),
+        )
+        .await;
+        assert!(result.is_ok());
+
+        let (description, category): (Option<String>, Option<String>) =
+            sqlx::query_as("SELECT description, category FROM channels WHERE id = $1")
+                .bind(channel_id)
+                .fetch_one(&state.db)
+                .await?;
+        assert_eq!(description.as_deref(), Some("Updated description"));
+        assert_eq!(category.as_deref(), Some("Ops"));
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn non_owner_cannot_update_channel(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (2, 'bob', 'b@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&state.db)
+                .await?;
+        sqlx::query(
+            "INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 2, 'member')",
+        )
+        .bind(channel_id)
+        .execute(&state.db)
+        .await?;
+        // No role cached — RoleCache::get_role defaults to "member", correctly denying access.
+
+        let req = UpdateChannelRequest {
+            description: Some("Hijacked".to_string()),
+            category: None,
+            is_private: None,
+        };
+        let result = update_channel(
+            AuthenticatedUser { user_id: 2 },
+            State(state),
+            axum::extract::Path(channel_id),
+            Json(req),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), StatusCode::FORBIDDEN);
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn toggling_to_private_generates_an_invite_code(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&state.db)
+                .await?;
+        sqlx::query(
+            "INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 1, 'owner')",
+        )
+        .bind(channel_id)
+        .execute(&state.db)
+        .await?;
+        state.roles.set_role(channel_id, 1, "owner").await.unwrap();
+
+        let req = UpdateChannelRequest {
+            description: None,
+            category: None,
+            is_private: Some(true),
+        };
+        let result = update_channel(
+            AuthenticatedUser { user_id: 1 },
+            State(state),
+            axum::extract::Path(channel_id),
+            Json(req),
+        )
+        .await;
+        let Ok(Json(resp)) = result else {
+            panic!("update_channel should succeed");
+        };
+        assert!(resp.invite_code.is_some());
         Ok(())
     }
 }
