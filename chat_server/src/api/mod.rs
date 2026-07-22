@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod invite_code;
 pub mod messages;
 pub mod ratelimit;
 pub mod server;
