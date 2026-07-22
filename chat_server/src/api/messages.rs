@@ -94,6 +94,9 @@ pub struct OnlineUsersResponse {
 pub struct ChannelInfo {
     pub id: i64,
     pub name: String,
+    pub description: Option<String>,
+    pub category: Option<String>,
+    pub is_private: bool,
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -523,12 +526,20 @@ pub async fn get_channel_online(
 }
 
 pub async fn list_channels(
-    _auth: AuthenticatedUser,
+    auth: AuthenticatedUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ChannelInfo>>, StatusCode> {
     let channels = sqlx::query_as::<_, ChannelInfo>(
-        "SELECT id, name FROM channels WHERE NOT is_dm ORDER BY id ASC",
+        "SELECT c.id, c.name, c.description, c.category, c.is_private
+         FROM channels c
+         WHERE NOT c.is_dm
+           AND (NOT c.is_private OR EXISTS (
+               SELECT 1 FROM channel_members m
+               WHERE m.channel_id = c.id AND m.user_id = $1
+           ))
+         ORDER BY c.id ASC",
     )
+    .bind(auth.user_id)
     .fetch_all(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1262,6 +1273,59 @@ mod tests {
         )
         .await;
         assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn list_channels_hides_private_channels_from_non_members(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h'), (2, 'bob', 'b@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        sqlx::query("INSERT INTO channels (name, is_private) VALUES ('public-chan', FALSE)")
+            .execute(&state.db)
+            .await?;
+        let private_id: i64 = sqlx::query_scalar(
+            "INSERT INTO channels (name, is_private, invite_code) VALUES ('secret-chan', TRUE, 'abc1234567') RETURNING id",
+        )
+        .fetch_one(&state.db)
+        .await?;
+        sqlx::query(
+            "INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 1, 'owner')",
+        )
+        .bind(private_id)
+        .execute(&state.db)
+        .await?;
+
+        let as_member = list_channels(AuthenticatedUser { user_id: 1 }, State(state.clone())).await;
+        let Ok(Json(member_view)) = as_member else {
+            panic!("should succeed")
+        };
+        // The `002_seed.sql` migration always inserts a public "general" channel into every
+        // fresh test database, so we assert on membership rather than exact counts.
+        assert!(
+            member_view.iter().any(|c| c.name == "public-chan"),
+            "owner sees the public channel"
+        );
+        assert!(
+            member_view.iter().any(|c| c.name == "secret-chan"),
+            "owner sees the private channel they belong to"
+        );
+
+        let as_outsider = list_channels(AuthenticatedUser { user_id: 2 }, State(state)).await;
+        let Ok(Json(outsider_view)) = as_outsider else {
+            panic!("should succeed")
+        };
+        assert!(
+            outsider_view.iter().any(|c| c.name == "public-chan"),
+            "non-member sees the public channel"
+        );
+        assert!(
+            !outsider_view.iter().any(|c| c.name == "secret-chan"),
+            "non-member does not see the private channel"
+        );
         Ok(())
     }
 }
