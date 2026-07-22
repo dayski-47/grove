@@ -124,3 +124,32 @@ pub async fn delete_message(
 
     Ok(if rows == 0 { None } else { Some(channel_id) })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[sqlx::test]
+    async fn inserts_and_reads_back_a_message(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('test') RETURNING id")
+                .fetch_one(&pool)
+                .await?;
+        let user_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (username, email, password_hash) VALUES ('alice', 'a@x.com', 'h') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await?;
+
+        let msg_id = insert_message(&pool, channel_id as u64, user_id as u64, "hello", 1000)
+            .await
+            .expect("insert_message should succeed");
+
+        let text: String = sqlx::query_scalar("SELECT text FROM messages WHERE id = $1")
+            .bind(msg_id as i64)
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(text, "hello");
+        Ok(())
+    }
+}
