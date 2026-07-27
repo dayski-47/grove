@@ -38,6 +38,19 @@ export function ChannelSettingsModal({
         getChannelMembers(channelId, token).then(setMembers).catch(() => {});
     }, [channelId, token]);
 
+    // Reopening settings on an already-private channel starts with `code` undefined
+    // (AppShell never tracks the invite code between opens). `update_channel` returns
+    // the existing code untouched when the caller is the owner and the channel is
+    // already private, so this is a safe, side-effect-free way to recover it. Must
+    // NOT fire for public channels — that would actually toggle privacy on and mint
+    // a new code.
+    useEffect(() => {
+        if (!isOwner || !isPrivate || code) return;
+        updateChannel(channelId, { is_private: true }, token)
+            .then(res => { if (res.invite_code) setCode(res.invite_code); })
+            .catch(() => {});
+    }, [channelId, isOwner, isPrivate, code, token]);
+
     async function saveOverview() {
         const updates = {
             description: descDraft,
