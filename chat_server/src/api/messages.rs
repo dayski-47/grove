@@ -281,7 +281,10 @@ pub async fn update_channel(
     Json(req): Json<UpdateChannelRequest>,
 ) -> Result<Json<UpdateChannelResponse>, StatusCode> {
     let role = state.roles.get_role(channel_id, auth.user_id).await;
-    if role != "owner" {
+    if role != "owner" && role != "moderator" {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if req.is_private.is_some() && role != "owner" {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -619,11 +622,12 @@ pub async fn join_channel(
     State(state): State<Arc<AppState>>,
     Json(req): Json<JoinChannelRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM channels WHERE id = $1")
-        .bind(req.channel_id)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let exists: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM channels WHERE id = $1 AND is_private = FALSE")
+            .bind(req.channel_id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if exists.is_none() {
         return Err(StatusCode::NOT_FOUND);
@@ -1089,12 +1093,17 @@ mod tests {
         let redis = crate::cache::connect_redis(&redis_url)
             .await
             .expect("Redis must be reachable for this test — start it via docker-compose.prod.yml");
+        // Every test shares this same Redis instance (unlike `#[sqlx::test]`'s
+        // per-test isolated Postgres database, whose sequences all restart at
+        // 1), so give each call its own key namespace to prevent concurrently
+        // running tests from colliding on `channel:<id>:roles`.
+        let test_prefix = format!("test-{}-", crate::api::invite_code::generate_invite_code());
         Arc::new(AppState {
             db: pool,
             redis: redis.clone(),
             jwt_secret: "test-secret-at-least-32-bytes-long!!".to_string(),
             presence: crate::cache::presence::PresenceTracker::new(redis.clone()),
-            roles: crate::cache::roles::RoleCache::new(redis),
+            roles: crate::cache::roles::RoleCache::with_prefix(redis, test_prefix),
         })
     }
 
@@ -1225,6 +1234,86 @@ mod tests {
         )
         .await;
         assert_eq!(result.unwrap_err(), StatusCode::FORBIDDEN);
+        Ok(())
+    }
+
+    /// Regression test for the IMPORTANT finding: the frontend's Settings
+    /// modal intentionally lets moderators edit description/category
+    /// (`canEdit = owner || moderator`), so the backend must accept those
+    /// edits from a moderator rather than silently 403ing them — while still
+    /// rejecting a moderator's attempt to flip `is_private`, which stays
+    /// strictly owner-only.
+    #[sqlx::test]
+    async fn moderator_can_update_description_but_not_privacy(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (2, 'bob', 'b@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&state.db)
+                .await?;
+        sqlx::query(
+            "INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 2, 'moderator')",
+        )
+        .bind(channel_id)
+        .execute(&state.db)
+        .await?;
+        state
+            .roles
+            .set_role(channel_id, 2, "moderator")
+            .await
+            .unwrap();
+
+        // Description/category edits succeed for a moderator.
+        let req = UpdateChannelRequest {
+            description: Some("Moderator-updated description".to_string()),
+            category: Some("Ops".to_string()),
+            is_private: None,
+        };
+        let result = update_channel(
+            AuthenticatedUser { user_id: 2 },
+            State(state.clone()),
+            axum::extract::Path(channel_id),
+            Json(req),
+        )
+        .await;
+        assert!(result.is_ok());
+
+        let (description, category): (Option<String>, Option<String>) =
+            sqlx::query_as("SELECT description, category FROM channels WHERE id = $1")
+                .bind(channel_id)
+                .fetch_one(&state.db)
+                .await?;
+        assert_eq!(
+            description.as_deref(),
+            Some("Moderator-updated description")
+        );
+        assert_eq!(category.as_deref(), Some("Ops"));
+
+        // But touching `is_private` is still rejected for a moderator.
+        let privacy_req = UpdateChannelRequest {
+            description: None,
+            category: None,
+            is_private: Some(true),
+        };
+        let privacy_result = update_channel(
+            AuthenticatedUser { user_id: 2 },
+            State(state.clone()),
+            axum::extract::Path(channel_id),
+            Json(privacy_req),
+        )
+        .await;
+        assert_eq!(privacy_result.unwrap_err(), StatusCode::FORBIDDEN);
+
+        let still_public: bool =
+            sqlx::query_scalar("SELECT is_private FROM channels WHERE id = $1")
+                .bind(channel_id)
+                .fetch_one(&state.db)
+                .await?;
+        assert!(!still_public, "is_private must not have been changed");
         Ok(())
     }
 
@@ -1384,9 +1473,14 @@ mod tests {
         .fetch_one(&state.db)
         .await?;
 
+        // Distinct, randomized loopback address so this test's rate-limit
+        // bucket (keyed on the caller's IP) never collides with the other
+        // `join_by_code` test — or with re-runs of this same test within the
+        // same 60-second rate-limit window.
+        let unique_ip = std::net::Ipv4Addr::new(127, 0, 0, (rand::random::<u8>()).max(1));
         let result = join_by_code(
             AuthenticatedUser { user_id: 2 },
-            ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))),
+            ConnectInfo(SocketAddr::from((unique_ip, 0))),
             State(state.clone()),
             Json(JoinByCodeRequest {
                 code: "joincode12".to_string(),
@@ -1415,9 +1509,12 @@ mod tests {
             .execute(&state.db)
             .await?;
 
+        // Distinct, randomized loopback address — see comment in
+        // `valid_code_joins_the_channel` for why this can't be a fixed IP.
+        let unique_ip = std::net::Ipv4Addr::new(127, 0, 0, (rand::random::<u8>()).max(1));
         let result = join_by_code(
             AuthenticatedUser { user_id: 2 },
-            ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))),
+            ConnectInfo(SocketAddr::from((unique_ip, 0))),
             State(state),
             Json(JoinByCodeRequest {
                 code: "doesnotexist".to_string(),
@@ -1425,6 +1522,43 @@ mod tests {
         )
         .await;
         assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);
+        Ok(())
+    }
+
+    /// Regression test for the CRITICAL finding: `join_channel` (the plain
+    /// join-by-id endpoint that `openChannel()` calls on every channel open)
+    /// must never let a user into a private channel just by knowing/guessing
+    /// its numeric id — that would completely bypass the invite-code system.
+    #[sqlx::test]
+    async fn non_member_cannot_join_private_channel_by_id(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (2, 'bob', 'b@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 = sqlx::query_scalar(
+            "INSERT INTO channels (name, is_private, invite_code) VALUES ('secret', TRUE, 'joincode12') RETURNING id",
+        )
+        .fetch_one(&state.db)
+        .await?;
+
+        let result = join_channel(
+            AuthenticatedUser { user_id: 2 },
+            State(state.clone()),
+            Json(JoinChannelRequest { channel_id }),
+        )
+        .await;
+        assert_eq!(result, Err(StatusCode::NOT_FOUND));
+
+        let member_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM channel_members WHERE channel_id = $1 AND user_id = 2",
+        )
+        .bind(channel_id)
+        .fetch_one(&state.db)
+        .await?;
+        assert_eq!(
+            member_count, 0,
+            "no membership row should have been created"
+        );
         Ok(())
     }
 

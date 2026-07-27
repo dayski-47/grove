@@ -23,7 +23,6 @@ pub struct AppState {
     pub redis: ConnectionManager,
     pub jwt_secret: String,
     pub presence: PresenceTracker,
-    #[allow(dead_code)]
     pub roles: RoleCache,
 }
 
