@@ -384,9 +384,12 @@ pub struct JoinByCodeResponse {
 
 pub async fn join_by_code(
     auth: AuthenticatedUser,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
     Json(req): Json<JoinByCodeRequest>,
 ) -> Result<Json<JoinByCodeResponse>, StatusCode> {
+    check_rate_limit(&state.redis, &format!("join_by_code:{}", addr.ip()), 10, 60).await?;
+
     let code = req.code.trim();
     if code.is_empty() || code.len() > 12 {
         return Err(StatusCode::NOT_FOUND);
@@ -528,13 +531,32 @@ pub async fn kick_member(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let rows = sqlx::query("DELETE FROM channel_members WHERE channel_id = $1 AND user_id = $2")
+    // The DB is the actual enforcement boundary here, not the cache reads above —
+    // those are only a cheap pre-filter. A stale/missing Redis role entry for the
+    // target must never let a moderator delete the real owner, so the DELETE
+    // itself is scoped to the caller's permission level against the DB's current
+    // role, mirroring update_member_role's atomic `role != 'owner'` guard.
+    let rows = if caller_role == "owner" {
+        sqlx::query(
+            "DELETE FROM channel_members WHERE channel_id = $1 AND user_id = $2 AND role != 'owner'",
+        )
         .bind(channel_id)
         .bind(target_user_id)
         .execute(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .rows_affected();
+        .rows_affected()
+    } else {
+        sqlx::query(
+            "DELETE FROM channel_members WHERE channel_id = $1 AND user_id = $2 AND role = 'member'",
+        )
+        .bind(channel_id)
+        .bind(target_user_id)
+        .execute(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .rows_affected()
+    };
 
     if rows == 0 {
         return Err(StatusCode::NOT_FOUND);
@@ -1364,6 +1386,7 @@ mod tests {
 
         let result = join_by_code(
             AuthenticatedUser { user_id: 2 },
+            ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))),
             State(state.clone()),
             Json(JoinByCodeRequest {
                 code: "joincode12".to_string(),
@@ -1394,6 +1417,7 @@ mod tests {
 
         let result = join_by_code(
             AuthenticatedUser { user_id: 2 },
+            ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))),
             State(state),
             Json(JoinByCodeRequest {
                 code: "doesnotexist".to_string(),
@@ -1666,6 +1690,59 @@ mod tests {
         )
         .await;
         assert_eq!(kick_peer_mod, Err(StatusCode::FORBIDDEN));
+        Ok(())
+    }
+
+    /// Regression test for the HIGH finding: `get_role` fails closed to "member"
+    /// on a cache miss, so a moderator kicking a target whose Redis role entry
+    /// is stale/missing must still be blocked by the DB's actual current role —
+    /// not just the cache-based pre-checks, which would incorrectly pass here.
+    #[sqlx::test]
+    async fn kick_member_is_blocked_by_db_role_even_with_stale_owner_cache(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let state = make_app_state(pool).await;
+        sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h'), (2, 'bob', 'b@x.com', 'h')")
+            .execute(&state.db)
+            .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&state.db)
+                .await?;
+        sqlx::query("INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, 1, 'owner'), ($1, 2, 'moderator')")
+            .bind(channel_id)
+            .execute(&state.db)
+            .await?;
+        state
+            .roles
+            .set_role(channel_id, 2, "moderator")
+            .await
+            .unwrap();
+        // Deliberately ensure there is no cache entry for user 1 (the real DB
+        // owner) — simulating a stale/missing Redis role entry. Redis is shared
+        // across test runs (unlike the per-test Postgres database), so an
+        // explicit remove_role is needed to guarantee the miss rather than
+        // relying on the key never having been set. `get_role` fails closed to
+        // "member" on a miss, so the cache-based pre-checks alone would
+        // incorrectly allow this kick to proceed.
+        state.roles.remove_role(channel_id, 1).await.unwrap();
+        assert_eq!(state.roles.get_role(channel_id, 1).await, "member");
+
+        let result = kick_member(
+            AuthenticatedUser { user_id: 2 },
+            State(state.clone()),
+            axum::extract::Path((channel_id, 1)),
+        )
+        .await;
+        assert_eq!(result, Err(StatusCode::NOT_FOUND));
+
+        let remaining: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM channel_members WHERE channel_id = $1 AND user_id = 1",
+        )
+        .bind(channel_id)
+        .fetch_one(&state.db)
+        .await?;
+        assert_eq!(remaining, 1, "the real owner must not have been removed");
         Ok(())
     }
 
