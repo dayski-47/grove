@@ -2846,6 +2846,16 @@ input, textarea {
   transform: scale(1.05);
 }
 
+.dw-palette-join-code {
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+}
+
+.dw-palette-join-code .dw-palette-input {
+  flex-grow: 1;
+}
+
 /* ============================================================
    REDUCED MOTION
    ============================================================ */

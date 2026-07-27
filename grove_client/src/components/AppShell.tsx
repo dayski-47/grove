@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { GroveSocket } from "../socket";
 import {
     getHistory, joinChannel, createChannel, listChannels,
     openDm, listDms, listFriends, addFriend, removeFriend,
     getChannelReactions, logout, getUserProfile,
     getChannelPins, pinMessage, unpinMessage, searchUsers,
+    joinByCode,
 } from "../api";
+import { ChannelSettingsModal } from "./ChannelSettingsModal";
 import {
     MessageType, type ParsedMessage, type SignalingMessage,
     type DmInfo, type FriendInfo, type ReactionUpdate,
@@ -83,6 +85,9 @@ export function AppShell({
     const [paletteIdx, setPaletteIdx]     = useState(0);
     const [createCategory, setCreateCategory] = useState("");
     const [createPrivate, setCreatePrivate]   = useState(false);
+    const [paletteMode, setPaletteMode] = useState<"default" | "browse" | "join-code">("default");
+    const [joinCodeDraft, setJoinCodeDraft] = useState("");
+    const [settingsOpen, setSettingsOpen] = useState(false);
 
     /* Data */
     const [channels, setChannels]       = useState<Channel[]>([]);
@@ -180,9 +185,11 @@ export function AppShell({
                 setPaletteOpen(v => !v);
                 setPaletteQuery("");
                 setPaletteIdx(0);
+                setPaletteMode("default");
             }
             if (e.key === "Escape") {
                 setPaletteOpen(false);
+                setPaletteMode("default");
             }
         }
         window.addEventListener("keydown", onKey);
@@ -580,6 +587,30 @@ export function AppShell({
         } catch { /* ignore */ }
     }
 
+    async function handleJoinByCode() {
+        const code = joinCodeDraft.trim();
+        if (!code) return;
+        try {
+            const res = await joinByCode(code, token);
+            setChannels(prev => prev.some(c => c.id === res.channel_id)
+                ? prev
+                : [...prev, { id: res.channel_id, name: res.name, is_private: true }]);
+            setJoinCodeDraft("");
+            setPaletteMode("default");
+            openChannel(res.channel_id, res.name, "channel");
+        } catch {
+            setToasts(prev => [...prev, {
+                id:          crypto.randomUUID(),
+                channelId:   -1,
+                channelName: "",
+                kind:        "channel",
+                senderName:  "Join failed",
+                preview:     "Invalid or expired invite code",
+                leaving:     false,
+            }]);
+        }
+    }
+
     async function handleAddFriend() {
         const username = addFriendId.trim();
         if (!username) return;
@@ -631,6 +662,8 @@ export function AppShell({
             return [
                 ...recentItems,
                 { kind: "action", id: "friends", label: "Friends", icon: "👥" },
+                { kind: "action", id: "browse-channels", label: "Browse all channels", icon: "🗂" },
+                { kind: "action", id: "join-private", label: "Join private channel", icon: "🔒" },
             ];
         }
 
@@ -683,6 +716,8 @@ export function AppShell({
         } else if (item.kind === "action") {
             if (item.id === "friends") { setActivePage("friends"); setPaletteOpen(false); }
             if (item.id === "create")  handleCreateChannel();
+            if (item.id === "browse-channels") setPaletteMode("browse");
+            if (item.id === "join-private")    setPaletteMode("join-code");
         }
     }
 
@@ -698,7 +733,11 @@ export function AppShell({
             const item = paletteItems[paletteIdx];
             if (item) selectPaletteItem(item);
         } else if (e.key === "Escape") {
-            setPaletteOpen(false);
+            if (paletteMode !== "default") {
+                setPaletteMode("default");
+            } else {
+                setPaletteOpen(false);
+            }
         }
     }
 
@@ -739,7 +778,7 @@ export function AppShell({
             <header className="dw-topbar" role="banner">
                 <button
                     className="dw-topbar-logo"
-                    onClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); }}
+                    onClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
                     aria-label="Open command palette"
                     title="Open navigation (Ctrl+K)"
                 >
@@ -748,7 +787,7 @@ export function AppShell({
 
                 <button
                     className="dw-topbar-location"
-                    onClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); }}
+                    onClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
                     aria-label="Navigate to a channel"
                     title="Ctrl+K to navigate"
                 >
@@ -865,6 +904,7 @@ export function AppShell({
                         channelId={activeChannelId}
                         channelName={activeDisplayName}
                         isDm={activeChannelKind === "dm"}
+                        onOpenSettings={() => setSettingsOpen(true)}
                         messages={activeMessages}
                         usernames={usernames}
                         currentUserId={userId}
@@ -909,12 +949,33 @@ export function AppShell({
                 )}
             </main>
 
+            {settingsOpen && activeChannelId !== null && activeChannelKind === "channel" && (() => {
+                const activeChannel = channels.find(c => c.id === activeChannelId);
+                if (!activeChannel) return null;
+                return (
+                    <ChannelSettingsModal
+                        channelId={activeChannelId}
+                        channelName={activeChannel.name}
+                        description={activeChannel.description}
+                        category={activeChannel.category}
+                        isPrivate={activeChannel.is_private}
+                        token={token}
+                        currentUserId={userId}
+                        myRole="member"
+                        onClose={() => setSettingsOpen(false)}
+                        onUpdated={updates => setChannels(prev => prev.map(c => (
+                            c.id === activeChannelId ? { ...c, ...updates } : c
+                        )))}
+                    />
+                );
+            })()}
+
             {/* ── Command palette ──────────────────────── */}
             {paletteOpen && (
                 <>
                     <div
                         className="dw-palette-backdrop"
-                        onClick={() => setPaletteOpen(false)}
+                        onClick={() => { setPaletteOpen(false); setPaletteMode("default"); }}
                         aria-hidden="true"
                     />
                     <div
@@ -942,7 +1003,52 @@ export function AppShell({
                             <kbd className="dw-palette-esc">Esc</kbd>
                         </div>
 
-                        {paletteItems.length > 0 && (
+                        {paletteMode === "join-code" && (
+                            <div className="dw-palette-join-code">
+                                <input
+                                    className="dw-palette-input"
+                                    placeholder="Enter invite code…"
+                                    value={joinCodeDraft}
+                                    onChange={e => setJoinCodeDraft(e.target.value)}
+                                    onKeyDown={e => { if (e.key === "Enter") handleJoinByCode(); }}
+                                    autoFocus
+                                    aria-label="Invite code"
+                                />
+                                <button className="dw-modal-btn-primary" onClick={handleJoinByCode}>
+                                    Join
+                                </button>
+                            </div>
+                        )}
+
+                        {paletteMode === "browse" && (
+                            <ul className="dw-palette-list" id="palette-list" role="listbox">
+                                {Object.entries(
+                                    channels.reduce<Record<string, Channel[]>>((groups, ch) => {
+                                        const key = ch.category?.trim() || "Channels";
+                                        (groups[key] ??= []).push(ch);
+                                        return groups;
+                                    }, {}),
+                                ).map(([groupName, chans]) => (
+                                    <Fragment key={groupName}>
+                                        <li className="dw-palette-category" role="presentation">{groupName}</li>
+                                        {chans.map(ch => (
+                                            <li
+                                                key={ch.id}
+                                                className="dw-palette-item"
+                                                role="option"
+                                                aria-selected={false}
+                                                onMouseDown={e => { e.preventDefault(); openChannel(ch.id, ch.name, "channel"); setPaletteOpen(false); }}
+                                            >
+                                                <span className="dw-palette-icon dw-palette-hash">#</span>
+                                                <span className="dw-palette-label">{ch.name}</span>
+                                            </li>
+                                        ))}
+                                    </Fragment>
+                                ))}
+                            </ul>
+                        )}
+
+                        {paletteMode === "default" && paletteItems.length > 0 && (
                             <ul className="dw-palette-list" id="palette-list" role="listbox">
                                 {!q && recentIds.some(id => channels.find(c => c.id === id) || dms.find(d => d.channel_id === id)) && (
                                     <li className="dw-palette-category" role="presentation">Recent</li>
@@ -994,7 +1100,7 @@ export function AppShell({
                             </ul>
                         )}
 
-                        {paletteItems.length === 0 && q && (
+                        {paletteMode === "default" && paletteItems.length === 0 && q && (
                             <div className="dw-palette-empty">Nothing found for "{q}"</div>
                         )}
 
