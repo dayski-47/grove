@@ -95,6 +95,7 @@ export interface MessageRowProps {
     name:         string;
     myUsername:   string;
     isOwn:        boolean;
+    canModerate:  boolean;
     senderColor?: string;
     isCont:       boolean;
     isPinned:     boolean;

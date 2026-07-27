@@ -3,7 +3,7 @@ import { MessageBody } from "./MessageBody";
 import { avatarBg, formatTime, initial, type MessageRowProps } from "./shared";
 
 export function IncomingRow({
-    m, name, myUsername, isOwn, senderColor, isCont, isPinned, reactions,
+    m, name, myUsername, isOwn, canModerate, senderColor, isCont, isPinned, reactions,
     isNew, enterDelayMs,
     editingId, editText, onEditChange, onEditSubmit, onEditCancel,
     onStartEdit, onDelete, onReact, onPin, onUnpin, onUserClick,
@@ -59,7 +59,7 @@ export function IncomingRow({
 
             {showActions && (
                 <MessageActions
-                    isOwn={isOwn} isPinned={isPinned} side="right"
+                    isOwn={isOwn} canModerate={canModerate} isPinned={isPinned} side="right"
                     onEdit={() => onStartEdit(m.id!, m.text)}
                     onDelete={() => onDelete(m.id!)}
                     onPin={() => onPin(m.id!)}

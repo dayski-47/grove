@@ -1,30 +1,34 @@
 interface MessageActionsProps {
-    isOwn:    boolean;
-    isPinned: boolean;
-    side:     "left" | "right";
-    onEdit:   () => void;
-    onDelete: () => void;
-    onPin:    () => void;
-    onUnpin:  () => void;
+    isOwn:        boolean;
+    canModerate?: boolean;
+    isPinned:     boolean;
+    side:         "left" | "right";
+    onEdit:       () => void;
+    onDelete:     () => void;
+    onPin:        () => void;
+    onUnpin:      () => void;
 }
 
-export function MessageActions({ isOwn, isPinned, side, onEdit, onDelete, onPin, onUnpin }: MessageActionsProps) {
+export function MessageActions({ isOwn, canModerate = false, isPinned, side, onEdit, onDelete, onPin, onUnpin }: MessageActionsProps) {
+    // Edit stays author-only — the backend's moderator bypass is delete-only
+    // (Task 13). Delete is available to the author OR a moderator/owner.
+    const canDelete = isOwn || canModerate;
     return (
         <div className={`dw-msg-actions ${side}`} aria-label="Message actions">
             {isOwn && (
-                <>
-                    <button className="dw-msg-action" title="Edit" onClick={onEdit} aria-label="Edit message">
-                        <EditIcon />
-                    </button>
-                    <button
-                        className="dw-msg-action danger"
-                        title="Delete"
-                        onClick={() => { if (window.confirm("Delete this message?")) onDelete(); }}
-                        aria-label="Delete message"
-                    >
-                        <TrashIcon />
-                    </button>
-                </>
+                <button className="dw-msg-action" title="Edit" onClick={onEdit} aria-label="Edit message">
+                    <EditIcon />
+                </button>
+            )}
+            {canDelete && (
+                <button
+                    className="dw-msg-action danger"
+                    title="Delete"
+                    onClick={() => { if (window.confirm("Delete this message?")) onDelete(); }}
+                    aria-label="Delete message"
+                >
+                    <TrashIcon />
+                </button>
             )}
             <button
                 className={`dw-msg-action${isPinned ? " active" : ""}`}

@@ -3,7 +3,7 @@ import { MessageList } from "./MessageList";
 import type { MessageListHandle } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import type { DisplayMessage } from "./MessageList";
-import type { PinnedMessage } from "../types";
+import type { ChannelRole, PinnedMessage } from "../types";
 
 type EmojiMap     = Record<string, { count: number; byMe: boolean }>;
 type ReactionsMap = Record<number, EmojiMap>;
@@ -12,6 +12,7 @@ interface ChatViewProps {
     channelId:      number;
     channelName:    string;
     isDm:           boolean;
+    myRole:         ChannelRole;
     onOpenSettings?: () => void;
     messages:     DisplayMessage[];
     usernames:    Record<number, string>;
@@ -36,7 +37,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({
-    channelId, channelName, isDm, onOpenSettings,
+    channelId, channelName, isDm, myRole, onOpenSettings,
     messages, usernames, currentUserId, myUsername,
     typingNames, connected,
     hasMore, loadingMore,
@@ -50,6 +51,10 @@ export function ChatView({
     const [showPill, setShowPill] = useState(false);
     const pinnedIds        = new Set(pins.map(p => p.message_id));
     const typingText       = buildTypingText(typingNames);
+    // Role doesn't vary per-message — derive the moderator gate once per render
+    // here, at the channel level, rather than passing the raw role all the way
+    // down to MessageActions.
+    const canModerate       = myRole === "owner" || myRole === "moderator";
 
     function handleEditLastMessage() {
         const last = [...messages].reverse().find(
@@ -104,6 +109,7 @@ export function ChatView({
                 myUsername={myUsername}
                 isDm={isDm}
                 usernames={usernames}
+                canModerate={canModerate}
                 reactions={reactions}
                 pinnedIds={pinnedIds}
                 hasMore={hasMore}

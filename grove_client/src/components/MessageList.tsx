@@ -59,6 +59,7 @@ export const MessageList = forwardRef<MessageListHandle, {
     currentUserId: number;
     myUsername?:   string;
     isDm?:         boolean;
+    canModerate?:  boolean;
     usernames:     Record<number, string>;
     reactions?:    ReactionsMap;
     pinnedIds?:    Set<number>;
@@ -78,6 +79,7 @@ export const MessageList = forwardRef<MessageListHandle, {
     currentUserId,
     myUsername   = "",
     isDm         = false,
+    canModerate  = false,
     usernames,
     reactions    = {},
     pinnedIds    = new Set(),
@@ -231,7 +233,7 @@ export const MessageList = forwardRef<MessageListHandle, {
                 const isNew      = staggerIdx !== undefined;
 
                 const rowProps = {
-                    m, name, myUsername, isOwn, senderColor,
+                    m, name, myUsername, isOwn, senderColor, canModerate,
                     isCont: cont, isPinned: pinned, reactions: msgRx,
                     isNew, enterDelayMs: (staggerIdx ?? 0) * 40,
                     editingId, editText,
