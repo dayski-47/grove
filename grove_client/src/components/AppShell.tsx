@@ -132,6 +132,7 @@ export function AppShell({
     /* Latest-value refs — updated inline each render for keyboard handler */
     const tabsForKeys   = useRef<{ id: number; name: string; kind: "channel" | "dm" }[]>([]);
     const activeForKeys = useRef<number | null>(null);
+    const paletteModeRef = useRef<"default" | "browse" | "join-code">("default");
     /* Latest-value refs for WS handler */
     const channelsRef   = useRef<Channel[]>([]);
     const dmsRef        = useRef<DmInfo[]>([]);
@@ -188,8 +189,11 @@ export function AppShell({
                 setPaletteMode("default");
             }
             if (e.key === "Escape") {
-                setPaletteOpen(false);
-                setPaletteMode("default");
+                if (paletteModeRef.current !== "default") {
+                    setPaletteMode("default");
+                } else {
+                    setPaletteOpen(false);
+                }
             }
         }
         window.addEventListener("keydown", onKey);
@@ -747,6 +751,7 @@ export function AppShell({
     channelsRef.current   = channels;
     dmsRef.current        = dms;
     usernamesRef.current  = usernames;
+    paletteModeRef.current = paletteMode;
 
     /* ── Derived values ─────────────────────────────────── */
 
