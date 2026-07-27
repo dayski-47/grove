@@ -5,14 +5,14 @@ import {
     openDm, listDms, listFriends, addFriend, removeFriend,
     getChannelReactions, logout, getUserProfile,
     getChannelPins, pinMessage, unpinMessage, searchUsers,
-    joinByCode,
+    joinByCode, getChannelMembers,
 } from "../api";
 import { ChannelSettingsModal } from "./ChannelSettingsModal";
 import {
     MessageType, type ParsedMessage, type SignalingMessage,
     type DmInfo, type FriendInfo, type ReactionUpdate,
     type EditUpdate, type DeleteUpdate, type UserProfile,
-    type PinnedMessage,
+    type PinnedMessage, type ChannelRole,
 } from "../types";
 import type { DisplayMessage } from "./MessageList";
 import { ChatView } from "./ChatView";
@@ -88,6 +88,7 @@ export function AppShell({
     const [paletteMode, setPaletteMode] = useState<"default" | "browse" | "join-code">("default");
     const [joinCodeDraft, setJoinCodeDraft] = useState("");
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [myChannelRoles, setMyChannelRoles] = useState<Record<number, ChannelRole>>({});
 
     /* Data */
     const [channels, setChannels]       = useState<Channel[]>([]);
@@ -909,7 +910,17 @@ export function AppShell({
                         channelId={activeChannelId}
                         channelName={activeDisplayName}
                         isDm={activeChannelKind === "dm"}
-                        onOpenSettings={() => setSettingsOpen(true)}
+                        onOpenSettings={() => {
+                            setSettingsOpen(true);
+                            if (activeChannelId !== null && !(activeChannelId in myChannelRoles)) {
+                                getChannelMembers(activeChannelId, token)
+                                    .then(members => {
+                                        const me = members.find(m => m.user_id === userId);
+                                        if (me) setMyChannelRoles(prev => ({ ...prev, [activeChannelId]: me.role }));
+                                    })
+                                    .catch(() => {});
+                            }
+                        }}
                         messages={activeMessages}
                         usernames={usernames}
                         currentUserId={userId}
@@ -966,7 +977,7 @@ export function AppShell({
                         isPrivate={activeChannel.is_private}
                         token={token}
                         currentUserId={userId}
-                        myRole="member"
+                        myRole={myChannelRoles[activeChannelId] ?? "member"}
                         onClose={() => setSettingsOpen(false)}
                         onUpdated={updates => setChannels(prev => prev.map(c => (
                             c.id === activeChannelId ? { ...c, ...updates } : c
