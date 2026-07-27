@@ -42,6 +42,7 @@ type Toast = {
     senderName:  string;
     preview:     string;
     leaving:     boolean;
+    persistent?: boolean;
 };
 
 const AVATAR_COLORS = [
@@ -556,10 +557,10 @@ export function AppShell({
 
     function dismissChannelToasts(channelId: number) {
         setToasts(prev => {
-            const ids = prev.filter(t => t.channelId === channelId && !t.leaving).map(t => t.id);
+            const ids = prev.filter(t => t.channelId === channelId && !t.leaving && !t.persistent).map(t => t.id);
             if (ids.length === 0) return prev;
             ids.forEach(id => setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 220));
-            return prev.map(t => t.channelId === channelId ? { ...t, leaving: true } : t);
+            return prev.map(t => t.channelId === channelId && !t.persistent ? { ...t, leaving: true } : t);
         });
     }
 
@@ -588,15 +589,18 @@ export function AppShell({
                 is_private: createPrivate,
             }]);
             if (res.invite_code) {
+                const tid = crypto.randomUUID();
                 setToasts(prev => [...prev, {
-                    id:          crypto.randomUUID(),
+                    id:          tid,
                     channelId:   res.channel_id,
                     channelName: name,
                     kind:        "channel",
                     senderName:  "Channel created",
                     preview:     `Invite code: ${res.invite_code}`,
                     leaving:     false,
+                    persistent:  true,
                 }]);
+                setTimeout(() => dismissToast(tid), 8000);
             }
             setCreateCategory("");
             setCreatePrivate(false);
