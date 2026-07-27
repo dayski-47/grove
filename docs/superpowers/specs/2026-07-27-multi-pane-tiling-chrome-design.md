@@ -31,9 +31,9 @@ There is one persistent UI element (not multiple independent overlays) that exis
   - Auto-dwindle: system places the new pane automatically (Hyprland's default dwindle behavior — new pane takes half the space of whichever pane is targeted, alternating split axis each time).
   - Directional: a `Ctrl+Shift+<arrow>`-style keybind places the new pane specifically to that side.
   - For directional splits, **the target pane is whichever pane the mouse cursor is currently hovering**, not keyboard focus — this matters once 2+ panes exist and avoids requiring an extra "focus this pane first" step.
-- **State cycling (1↔2↔3):** separate collapse and expand keybinds (not one keybind that cycles, since collapse/expand are conceptually distinct one-way steps the user described independently). To avoid pure keybind-memorization (explicit user concern — "people will forget keybinds"), the pill/circle itself is also clickable to perform the same collapse/expand step. Every new keybind introduced by this spec should have a discoverable non-keybind fallback where one is cheap to provide.
+- **State cycling (1↔2↔3):** State 1 is not a manual choice — it is the state that exists *only* when a single pane is open. Going from 1 pane to 2+ always enters State 2 or 3 (whichever was last active); going back down to exactly 1 pane always returns to State 1 automatically, regardless of which of State 2/3 was active beforehand. Between States 2 and 3, while 2+ panes are open, the choice is manual — separate collapse and expand keybinds step between "more headers" (3) and "more space" (2), since that's a preference the user should control (do I want pane labels, or do I want the extra pixels back), not something the pane count should decide for them. To avoid pure keybind-memorization (explicit user concern — "people will forget keybinds"), the pill/circle itself is also clickable to perform the same collapse/expand step. Every new keybind introduced by this spec should have a discoverable non-keybind fallback where one is cheap to provide.
 - **`Ctrl+1`–`8`:** once 2+ panes exist, this shortcut switches between *panes* (matching the State 2 pill's own numbering — pane 1, pane 2, etc.), not between conversations within a pane. In State 1 (no split), it keeps its current, existing meaning: switch between open conversation tabs. This is a mode-dependent semantic shift and needs to be implemented as such, not left ambiguous.
-- **Closing a pane:** needs its own action (not discussed explicitly during brainstorming) — recommend `Ctrl+W`, unused by Grove today. State transitions are otherwise strictly manual (collapse/expand keybind or click, per above) — closing panes down to a single one does **not** automatically revert the chrome from State 2/3 back to State 1; it stays in whatever state it was in until manually expanded. Flagging this as worth double-checking with the user before implementation: a single pane sitting in chrome-free State 2 could read as broken rather than intentional.
+- **Closing a pane:** needs its own action (not discussed explicitly during brainstorming) — recommend `Ctrl+W`, unused by Grove today. Closing panes down to exactly 1 remaining pane automatically returns the chrome to State 1 (per the State cycling rule above) — this is the one state transition that is never manual.
 
 ## Pane Kinds
 
@@ -45,10 +45,10 @@ Different pane contents have different sizing preferences and (for call/screen-s
 | DM | Any — can be primary or secondary | Distinct blue-ish accent (exact value TBD during visual design) | Same behavior as Channel, different accent only |
 | Notification | Prefers small/secondary, never auto-promoted to primary | Amber/gold | Compact list content, doesn't need room |
 | Details (shared files/links/photos) | Prefers small/secondary, never auto-promoted to primary | Purple/violet | A satellite pane opened via the existing chat header's new "ⓘ Details" icon. It counts toward the 4-pane max and participates in the same dwindle sizing math as any other pane — but **opening/closing it never triggers a chrome-state transition on its own.** Only the dedicated split action moves the chrome from State 1 to State 2; Details can be open in either state without changing which one is active. |
-| Call | Roomy/legible sizing, can be primary | TBD | Shows participant video |
-| Screen-share | **Not a separate pane kind** — a mode of the Call pane. When screen-share starts, the Call pane's content switches to the shared screen and auto-promotes to primary (bumping whatever was primary to secondary); participant video shrinks to a small thumbnail strip within the same pane. Matches Zoom/Discord's existing convention users already know. | — | |
+| Call (voice only, no share) | **Not a pane at all** — nobody watches a voice call, so it doesn't occupy a pane slot or count toward the 4-pane max. It lives as a small icon/module embedded directly in whichever chrome shape is currently active (the State 1 bar, or the State 2/3 pill) — subtle active/pulsing indicator, hover or click reveals inline controls (mute, end, timer). No separate floating overlay widget — this replaces the old, never-built V2-spec "Voice Call Overlay" concept with something integrated into the chrome instead. | — | |
+| Screen-share | **A real pane, created the moment sharing starts** — this is the one case a call becomes an actual pane. It auto-promotes to primary (bumping whatever was primary to secondary); participant video shrinks to a small thumbnail strip within this same pane (Zoom/Discord convention). Closing this pane **only stops the screen-share** — the call itself keeps going, uninterrupted, collapsing back down to the chrome-embedded indicator with no separate pane. Ending the call entirely is a distinct action (via the embedded controls), never a side effect of closing the share pane. | Distinct accent, TBD (only visible while a share pane exists) | |
 
-**Max simultaneous panes: 4.** Sizing among them follows Hyprland's dwindle algorithm as a base, weighted by the kind table above (a Notification or Details pane should end up smaller than a Channel/DM/Call pane even under equal dwindle math) — the exact ratio/weighting formula is implementation-tuning work, not specified here.
+**Max simultaneous panes: 4.** A voice-only call never counts toward this — it isn't a pane. Sizing among actual panes follows Hyprland's dwindle algorithm as a base, weighted by the kind table above (a Notification or Details pane should end up smaller than a Channel/DM pane even under equal dwindle math) — the exact ratio/weighting formula is implementation-tuning work, not specified here.
 
 **Explicitly out of scope for this spec** (the underlying voice/call infrastructure itself): TURN servers, group-call SFU work, and general WebRTC hardening are a separate, already-queued initiative ("Voice Calling Server" in `GROVE_HANDOFF.md`'s Next Work). This spec only defines how a call's *pane* is sized and behaves once a call exists — not how calls are established or scaled.
 
@@ -60,8 +60,8 @@ New shortcuts introduced by this spec (exact key combinations are a recommended 
 |---|---|
 | Create split (opens empty pane) | `Ctrl+Shift+Enter` |
 | Directional split | `Ctrl+Shift+<Arrow>` (targets hovered pane) |
-| Collapse chrome one state (1→2, 2→3) | `Ctrl+Shift+[` (also: click the pill/circle) |
-| Expand chrome one state (3→2, 2→1) | `Ctrl+Shift+]` (also: click the pill/circle) |
+| Collapse chrome, State 2→3 | `Ctrl+Shift+[` (also: click the pill) — only meaningful with 2+ panes open |
+| Expand chrome, State 3→2 | `Ctrl+Shift+]` (also: click the circle) — only meaningful with 2+ panes open |
 | Open command island | `Ctrl+Shift+Space` |
 | Close focused/hovered pane | `Ctrl+W` |
 | Switch pane / switch tab (mode-dependent) | `Ctrl+1`–`8` (existing shortcut, new panes-mode meaning) |
@@ -71,7 +71,8 @@ This is a genuinely large new keybind surface layered onto an already keyboard-h
 
 ## What This Spec Does Not Resolve
 
-- Exact colors for Call/DM pane accents, and the final Darkwood palette overall — folded into the still-pending, separately-scoped "dark grove color palette" refresh the user also raised, not decided here.
+- Exact colors for DM/screen-share pane accents, and the final Darkwood palette overall — folded into the still-pending, separately-scoped "dark grove color palette" refresh the user also raised, not decided here.
+- Exact visual treatment of the chrome-embedded call indicator (icon choice, where in the bar/pill it sits, how the inline controls expand) — a visual-design detail for implementation, the mechanic itself (embedded, not a pane, not a separate floating widget) is decided.
 - Exact reactbits.dev animation primitives/easing values to build the transforms on — a technical lookup for the implementation plan, not a design decision.
 - Exact dwindle sizing ratios/weights per pane kind — implementation-time tuning.
 - Manual pane resize (drag a pane border to resize) — not discussed; if wanted, it's an addition to a future spec, not assumed here.
