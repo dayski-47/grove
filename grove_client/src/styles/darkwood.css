@@ -2756,6 +2756,13 @@ input, textarea {
 
 .dw-modal-btn-primary:hover { background: var(--leaf-bright); }
 
+.dw-modal-error {
+  color: var(--danger);
+  font-size: var(--text-xs);
+  margin: 0 var(--sp-4);
+  padding: var(--sp-1) 0;
+}
+
 .dw-modal-members {
   display: flex;
   flex-direction: column;

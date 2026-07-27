@@ -30,6 +30,7 @@ export function ChannelSettingsModal({
     const [code, setCode] = useState(inviteCode);
     const [members, setMembers] = useState<MemberInfo[]>([]);
     const [openMenuFor, setOpenMenuFor] = useState<number | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
     const canEdit = myRole === "owner" || myRole === "moderator";
     const isOwner = myRole === "owner";
@@ -52,15 +53,19 @@ export function ChannelSettingsModal({
     }, [channelId, isOwner, isPrivate, code, token]);
 
     async function saveOverview() {
+        setError(null);
         const updates = {
             description: descDraft,
             category:    categoryDraft,
             is_private:  privateDraft,
         };
-        const res = await updateChannel(channelId, updates, token).catch(() => null);
-        if (!res) return;
-        setCode(res.invite_code ?? undefined);
-        onUpdated(updates);
+        try {
+            const res = await updateChannel(channelId, updates, token);
+            setCode(res.invite_code ?? undefined);
+            onUpdated(updates);
+        } catch {
+            setError("Failed to save changes — you may not have permission.");
+        }
     }
 
     async function handleRegenerate() {
@@ -69,15 +74,27 @@ export function ChannelSettingsModal({
     }
 
     async function handlePromote(userId: number, role: ChannelRole) {
-        await updateMemberRole(channelId, userId, role, token).catch(() => {});
-        setMembers(prev => prev.map(m => (m.user_id === userId ? { ...m, role } : m)));
-        setOpenMenuFor(null);
+        setError(null);
+        try {
+            await updateMemberRole(channelId, userId, role, token);
+            setMembers(prev => prev.map(m => (m.user_id === userId ? { ...m, role } : m)));
+            setOpenMenuFor(null);
+        } catch {
+            setError("Failed to promote member — you may not have permission.");
+            setOpenMenuFor(null);
+        }
     }
 
     async function handleKick(userId: number) {
-        await kickMember(channelId, userId, token).catch(() => {});
-        setMembers(prev => prev.filter(m => m.user_id !== userId));
-        setOpenMenuFor(null);
+        setError(null);
+        try {
+            await kickMember(channelId, userId, token);
+            setMembers(prev => prev.filter(m => m.user_id !== userId));
+            setOpenMenuFor(null);
+        } catch {
+            setError("Failed to kick member — you may not have permission.");
+            setOpenMenuFor(null);
+        }
     }
 
     return (
@@ -107,6 +124,10 @@ export function ChannelSettingsModal({
                         Members ({members.length})
                     </button>
                 </div>
+
+                {error && (
+                    <p className="dw-modal-error" role="alert">{error}</p>
+                )}
 
                 {tab === "overview" && (
                     <div className="dw-modal-body">
