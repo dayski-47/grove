@@ -2856,6 +2856,31 @@ input, textarea {
   flex-grow: 1;
 }
 
+.dw-palette-create-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+}
+
+.dw-palette-create-name {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.dw-palette-create-name .dw-palette-hash {
+  color: var(--text-primary);
+}
+
+.dw-palette-create-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
 /* ============================================================
    REDUCED MOTION
    ============================================================ */

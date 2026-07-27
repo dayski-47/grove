@@ -85,7 +85,7 @@ export function AppShell({
     const [paletteIdx, setPaletteIdx]     = useState(0);
     const [createCategory, setCreateCategory] = useState("");
     const [createPrivate, setCreatePrivate]   = useState(false);
-    const [paletteMode, setPaletteMode] = useState<"default" | "browse" | "join-code">("default");
+    const [paletteMode, setPaletteMode] = useState<"default" | "browse" | "join-code" | "create-options">("default");
     const [joinCodeDraft, setJoinCodeDraft] = useState("");
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [myChannelRoles, setMyChannelRoles] = useState<Record<number, ChannelRole>>({});
@@ -133,7 +133,7 @@ export function AppShell({
     /* Latest-value refs — updated inline each render for keyboard handler */
     const tabsForKeys   = useRef<{ id: number; name: string; kind: "channel" | "dm" }[]>([]);
     const activeForKeys = useRef<number | null>(null);
-    const paletteModeRef = useRef<"default" | "browse" | "join-code">("default");
+    const paletteModeRef = useRef<"default" | "browse" | "join-code" | "create-options">("default");
     /* Latest-value refs for WS handler */
     const channelsRef   = useRef<Channel[]>([]);
     const dmsRef        = useRef<DmInfo[]>([]);
@@ -473,6 +473,18 @@ export function AppShell({
         setOpenTabs(prev => prev.find(t => t.id === channelId) ? prev : [...prev, { id: channelId, name: displayName, kind }]);
         setPaletteOpen(false);
 
+        // Populate the caller's role for this channel lazily, the first time it's
+        // opened — needed so Delete's moderator gating works even before the
+        // settings modal has ever been opened (Task 20 only fetched roles there).
+        if (kind === "channel" && !(channelId in myChannelRoles)) {
+            getChannelMembers(channelId, token)
+                .then(members => {
+                    const me = members.find(m => m.user_id === userId);
+                    if (me) setMyChannelRoles(prev => ({ ...prev, [channelId]: me.role }));
+                })
+                .catch(() => {});
+        }
+
         if (loadedRef.current.has(channelId)) return;
         loadedRef.current.add(channelId);
 
@@ -588,6 +600,7 @@ export function AppShell({
             }
             setCreateCategory("");
             setCreatePrivate(false);
+            setPaletteMode("default");
             openChannel(res.channel_id, name, "channel");
         } catch { /* ignore */ }
     }
@@ -720,7 +733,7 @@ export function AppShell({
             }
         } else if (item.kind === "action") {
             if (item.id === "friends") { setActivePage("friends"); setPaletteOpen(false); }
-            if (item.id === "create")  handleCreateChannel();
+            if (item.id === "create")  setPaletteMode("create-options");
             if (item.id === "browse-channels") setPaletteMode("browse");
             if (item.id === "join-private")    setPaletteMode("join-code");
         }
@@ -760,6 +773,8 @@ export function AppShell({
     const myProfile = profiles[userId];
 
     const totalUnread = Object.values(unreadByChannel).reduce((s, n) => s + n, 0);
+
+    const myRole: ChannelRole = activeChannelId !== null ? (myChannelRoles[activeChannelId] ?? "member") : "member";
 
     const activeMessages  = activeChannelId !== null ? (messages[activeChannelId] ?? []) : [];
     const activeReactions = activeChannelId !== null ? (reactions[activeChannelId] ?? {}) : {};
@@ -910,6 +925,7 @@ export function AppShell({
                         channelId={activeChannelId}
                         channelName={activeDisplayName}
                         isDm={activeChannelKind === "dm"}
+                        myRole={myRole}
                         onOpenSettings={() => {
                             setSettingsOpen(true);
                             if (activeChannelId !== null && !(activeChannelId in myChannelRoles)) {
@@ -1032,6 +1048,35 @@ export function AppShell({
                                 />
                                 <button className="dw-modal-btn-primary" onClick={handleJoinByCode}>
                                     Join
+                                </button>
+                            </div>
+                        )}
+
+                        {paletteMode === "create-options" && (
+                            <div className="dw-palette-create-options">
+                                <div className="dw-palette-create-name">
+                                    Create <span className="dw-palette-hash">#</span>
+                                    {paletteQuery.trim().replace(/^#/, "")}
+                                </div>
+                                <input
+                                    className="dw-palette-input"
+                                    placeholder="Category (optional)"
+                                    value={createCategory}
+                                    onChange={e => setCreateCategory(e.target.value)}
+                                    onKeyDown={e => { if (e.key === "Enter") handleCreateChannel(); }}
+                                    autoFocus
+                                    aria-label="Channel category"
+                                />
+                                <label className="dw-palette-create-checkbox">
+                                    <input
+                                        type="checkbox"
+                                        checked={createPrivate}
+                                        onChange={e => setCreatePrivate(e.target.checked)}
+                                    />
+                                    Private channel
+                                </label>
+                                <button className="dw-modal-btn-primary" onClick={handleCreateChannel}>
+                                    Create channel
                                 </button>
                             </div>
                         )}
