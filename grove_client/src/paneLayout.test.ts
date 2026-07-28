@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-    makeLeaf, countLeaves, getLeaves, findLeafById, rebalance,
+    makeLeaf, countLeaves, getLeaves, findLeafById, rebalance, splitAuto,
     type PaneContent, type PaneTreeNode, type SplitNode,
 } from "./paneLayout";
 
@@ -89,3 +89,47 @@ describe("rebalance", () => {
         expect(inner.ratio).toBeCloseTo(0.625, 3);
     });
 });
+
+describe("splitAuto", () => {
+    it("splits a single leaf into a 2-leaf tree", () => {
+        const root = makeLeaf(pane("p1"));
+        const result = splitAuto(root, "p1", pane("p2", 2)) as SplitNode;
+        expect(result.type).toBe("split");
+        expect(getLeaves(result).map(l => l.pane.paneId)).toEqual(["p1", "p2"]);
+    });
+
+    it("alternates split axis with each additional split", () => {
+        const root = makeLeaf(pane("p1"));
+        const afterFirst = splitAuto(root, "p1", pane("p2", 2)) as SplitNode;
+        expect(afterFirst.axis).toBe("row");
+
+        const afterSecond = splitAuto(afterFirst, "p2", pane("p3", 3));
+        const secondSplit = findSplitContaining(afterSecond, "p2");
+        expect(secondSplit?.axis).toBe("column");
+    });
+
+    it("is a no-op once at MAX_PANES", () => {
+        let root: PaneTreeNode = makeLeaf(pane("p1"));
+        root = splitAuto(root, "p1", pane("p2", 2));
+        root = splitAuto(root, "p2", pane("p3", 3));
+        root = splitAuto(root, "p3", pane("p4", 4));
+        expect(countLeaves(root)).toBe(4);
+        const attempt = splitAuto(root, "p4", pane("p5", 5));
+        expect(attempt).toBe(root);
+        expect(countLeaves(attempt)).toBe(4);
+    });
+
+    it("is a no-op when the target id does not exist", () => {
+        const root = makeLeaf(pane("p1"));
+        const attempt = splitAuto(root, "missing", pane("p2", 2));
+        expect(attempt).toBe(root);
+    });
+});
+
+function findSplitContaining(node: PaneTreeNode, paneId: string): SplitNode | null {
+    if (node.type === "leaf") return null;
+    if (findLeafById(node, paneId) === null) return null;
+    if (findLeafById(node.a, paneId) !== null && node.a.type === "leaf") return node;
+    if (findLeafById(node.b, paneId) !== null && node.b.type === "leaf") return node;
+    return findSplitContaining(node.a, paneId) ?? findSplitContaining(node.b, paneId);
+}

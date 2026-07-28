@@ -84,3 +84,36 @@ export function findLeafById(node: PaneTreeNode | null, paneId: string): LeafNod
     if (node.type === "leaf") return node.pane.paneId === paneId ? node : null;
     return findLeafById(node.a, paneId) ?? findLeafById(node.b, paneId);
 }
+
+function nextAxis(depth: number): SplitAxis {
+    return depth % 2 === 0 ? "row" : "column";
+}
+
+function replaceLeaf(
+    node: PaneTreeNode,
+    targetId: string,
+    depth: number,
+    build: (leaf: LeafNode, depth: number) => PaneTreeNode,
+): PaneTreeNode {
+    if (node.type === "leaf") {
+        return node.pane.paneId === targetId ? build(node, depth) : node;
+    }
+    return {
+        ...node,
+        a: replaceLeaf(node.a, targetId, depth + 1, build),
+        b: replaceLeaf(node.b, targetId, depth + 1, build),
+    };
+}
+
+export function splitAuto(root: PaneTreeNode, targetPaneId: string, newPane: PaneContent): PaneTreeNode {
+    if (countLeaves(root) >= MAX_PANES) return root;
+    if (findLeafById(root, targetPaneId) === null) return root;
+    const next = replaceLeaf(root, targetPaneId, 0, (leaf, depth) => ({
+        type: "split",
+        axis: nextAxis(depth),
+        ratio: 0.5,
+        a: leaf,
+        b: makeLeaf(newPane),
+    }));
+    return rebalance(next);
+}
