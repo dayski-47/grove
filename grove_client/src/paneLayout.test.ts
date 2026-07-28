@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-    makeLeaf, countLeaves, getLeaves, findLeafById, rebalance, splitAuto,
+    makeLeaf, countLeaves, getLeaves, findLeafById, rebalance, splitAuto, splitDirectional,
     type PaneContent, type PaneTreeNode, type SplitNode,
 } from "./paneLayout";
 
@@ -133,3 +133,42 @@ function findSplitContaining(node: PaneTreeNode, paneId: string): SplitNode | nu
     if (findLeafById(node.b, paneId) !== null && node.b.type === "leaf") return node;
     return findSplitContaining(node.a, paneId) ?? findSplitContaining(node.b, paneId);
 }
+
+describe("splitDirectional", () => {
+    it("places the new pane to the left (row axis, new pane first)", () => {
+        const root = makeLeaf(pane("p1"));
+        const result = splitDirectional(root, "p1", pane("p2", 2), "left") as SplitNode;
+        expect(result.axis).toBe("row");
+        expect(getLeaves(result).map(l => l.pane.paneId)).toEqual(["p2", "p1"]);
+    });
+
+    it("places the new pane to the right (row axis, new pane second)", () => {
+        const root = makeLeaf(pane("p1"));
+        const result = splitDirectional(root, "p1", pane("p2", 2), "right") as SplitNode;
+        expect(result.axis).toBe("row");
+        expect(getLeaves(result).map(l => l.pane.paneId)).toEqual(["p1", "p2"]);
+    });
+
+    it("places the new pane above (column axis, new pane first)", () => {
+        const root = makeLeaf(pane("p1"));
+        const result = splitDirectional(root, "p1", pane("p2", 2), "up") as SplitNode;
+        expect(result.axis).toBe("column");
+        expect(getLeaves(result).map(l => l.pane.paneId)).toEqual(["p2", "p1"]);
+    });
+
+    it("places the new pane below (column axis, new pane second)", () => {
+        const root = makeLeaf(pane("p1"));
+        const result = splitDirectional(root, "p1", pane("p2", 2), "down") as SplitNode;
+        expect(result.axis).toBe("column");
+        expect(getLeaves(result).map(l => l.pane.paneId)).toEqual(["p1", "p2"]);
+    });
+
+    it("is a no-op once at MAX_PANES", () => {
+        let root: PaneTreeNode = makeLeaf(pane("p1"));
+        root = splitAuto(root, "p1", pane("p2", 2));
+        root = splitAuto(root, "p2", pane("p3", 3));
+        root = splitAuto(root, "p3", pane("p4", 4));
+        const attempt = splitDirectional(root, "p4", pane("p5", 5), "right");
+        expect(attempt).toBe(root);
+    });
+});

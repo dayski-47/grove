@@ -117,3 +117,25 @@ export function splitAuto(root: PaneTreeNode, targetPaneId: string, newPane: Pan
     }));
     return rebalance(next);
 }
+
+export function splitDirectional(
+    root: PaneTreeNode,
+    targetPaneId: string,
+    newPane: PaneContent,
+    direction: SplitDirection,
+): PaneTreeNode {
+    if (countLeaves(root) >= MAX_PANES) return root;
+    if (findLeafById(root, targetPaneId) === null) return root;
+
+    const axis: SplitAxis = (direction === "left" || direction === "right") ? "row" : "column";
+    const newPaneFirst = direction === "left" || direction === "up";
+
+    const next = replaceLeaf(root, targetPaneId, 0, leaf => ({
+        type: "split",
+        axis,
+        ratio: 0.5,
+        a: newPaneFirst ? makeLeaf(newPane) : leaf,
+        b: newPaneFirst ? leaf : makeLeaf(newPane),
+    }));
+    return rebalance(next);
+}
