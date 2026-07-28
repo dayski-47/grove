@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-    makeLeaf, countLeaves, getLeaves, findLeafById, rebalance, splitAuto, splitDirectional,
+    makeLeaf, countLeaves, getLeaves, findLeafById, rebalance, splitAuto, splitDirectional, removePane,
     type PaneContent, type PaneTreeNode, type SplitNode,
 } from "./paneLayout";
 
@@ -170,5 +170,32 @@ describe("splitDirectional", () => {
         root = splitAuto(root, "p3", pane("p4", 4));
         const attempt = splitDirectional(root, "p4", pane("p5", 5), "right");
         expect(attempt).toBe(root);
+    });
+});
+
+describe("removePane", () => {
+    it("returns null when removing the only leaf", () => {
+        const root = makeLeaf(pane("p1"));
+        expect(removePane(root, "p1")).toBeNull();
+    });
+
+    it("collapses a 2-leaf split down to the surviving leaf", () => {
+        const root = split(makeLeaf(pane("p1")), makeLeaf(pane("p2", 2)));
+        const result = removePane(root, "p1");
+        expect(result?.type).toBe("leaf");
+        expect((result as { type: "leaf"; pane: PaneContent } | null)?.pane.paneId).toBe("p2");
+    });
+
+    it("collapses a nested split, keeping the rest of the tree", () => {
+        const root = split(makeLeaf(pane("p1")), split(makeLeaf(pane("p2", 2)), makeLeaf(pane("p3", 3))));
+        const result = removePane(root, "p2");
+        expect(countLeaves(result)).toBe(2);
+        expect(getLeaves(result!).map(l => l.pane.paneId)).toEqual(["p1", "p3"]);
+    });
+
+    it("leaves the tree unchanged when the id is not found", () => {
+        const root = split(makeLeaf(pane("p1")), makeLeaf(pane("p2", 2)));
+        const result = removePane(root, "missing");
+        expect(getLeaves(result!).map(l => l.pane.paneId)).toEqual(["p1", "p2"]);
     });
 });

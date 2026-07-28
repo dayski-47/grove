@@ -139,3 +139,14 @@ export function splitDirectional(
     }));
     return rebalance(next);
 }
+
+export function removePane(root: PaneTreeNode, paneId: string): PaneTreeNode | null {
+    if (root.type === "leaf") {
+        return root.pane.paneId === paneId ? null : root;
+    }
+    const a = removePane(root.a, paneId);
+    const b = removePane(root.b, paneId);
+    if (a === null) return b;
+    if (b === null) return a;
+    return rebalance({ type: "split", axis: root.axis, ratio: root.ratio, a, b });
+}
