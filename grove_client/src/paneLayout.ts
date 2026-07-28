@@ -38,6 +38,27 @@ export type PaneTreeNode = LeafNode | SplitNode;
 
 export const MAX_PANES = 4;
 
+export const PANE_KIND_WEIGHT: Record<PaneKind, number> = {
+    channel:      1.0,
+    dm:           1.0,
+    notification: 0.6,
+    details:      0.6,
+};
+
+function weightOf(node: PaneTreeNode): number {
+    if (node.type === "leaf") return PANE_KIND_WEIGHT[node.pane.kind];
+    return (weightOf(node.a) + weightOf(node.b)) / 2;
+}
+
+export function rebalance(node: PaneTreeNode): PaneTreeNode {
+    if (node.type === "leaf") return node;
+    const a  = rebalance(node.a);
+    const b  = rebalance(node.b);
+    const wa = weightOf(a);
+    const wb = weightOf(b);
+    return { ...node, a, b, ratio: wa / (wa + wb) };
+}
+
 export function makeLeaf(pane: PaneContent): LeafNode {
     return { type: "leaf", pane };
 }
