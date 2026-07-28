@@ -150,3 +150,21 @@ export function removePane(root: PaneTreeNode, paneId: string): PaneTreeNode | n
     if (b === null) return a;
     return rebalance({ type: "split", axis: root.axis, ratio: root.ratio, a, b });
 }
+
+export type ChromeState = "state1" | "state2" | "state3";
+export type MultiPaneChromeState = "state2" | "state3";
+
+export function countNonDetailsLeaves(node: PaneTreeNode | null): number {
+    return getLeaves(node).filter(leaf => leaf.pane.kind !== "details").length;
+}
+
+export function deriveChromeState(
+    paneRoot: PaneTreeNode | null,
+    lastMultiPaneState: MultiPaneChromeState,
+): ChromeState {
+    return countNonDetailsLeaves(paneRoot) <= 1 ? "state1" : lastMultiPaneState;
+}
+
+export function toggleMultiPaneState(state: MultiPaneChromeState): MultiPaneChromeState {
+    return state === "state2" ? "state3" : "state2";
+}

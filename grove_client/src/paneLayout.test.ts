@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
     makeLeaf, countLeaves, getLeaves, findLeafById, rebalance, splitAuto, splitDirectional, removePane,
+    countNonDetailsLeaves, deriveChromeState, toggleMultiPaneState,
     type PaneContent, type PaneTreeNode, type SplitNode,
 } from "./paneLayout";
 
@@ -197,5 +198,57 @@ describe("removePane", () => {
         const root = split(makeLeaf(pane("p1")), makeLeaf(pane("p2", 2)));
         const result = removePane(root, "missing");
         expect(getLeaves(result!).map(l => l.pane.paneId)).toEqual(["p1", "p2"]);
+    });
+});
+
+describe("countNonDetailsLeaves", () => {
+    it("is 0 for a null tree", () => {
+        expect(countNonDetailsLeaves(null)).toBe(0);
+    });
+
+    it("counts a single channel leaf", () => {
+        expect(countNonDetailsLeaves(makeLeaf(pane("p1")))).toBe(1);
+    });
+
+    it("excludes details leaves from the count", () => {
+        const detailsPane: PaneContent = { paneId: "p2", kind: "details", channelId: 1, channelName: "" };
+        const tree = split(makeLeaf(pane("p1")), makeLeaf(detailsPane));
+        expect(countNonDetailsLeaves(tree)).toBe(1);
+    });
+
+    it("counts two ordinary panes even alongside a details pane", () => {
+        const detailsPane: PaneContent = { paneId: "p3", kind: "details", channelId: 1, channelName: "" };
+        const tree = split(split(makeLeaf(pane("p1")), makeLeaf(pane("p2", 2))), makeLeaf(detailsPane));
+        expect(countNonDetailsLeaves(tree)).toBe(2);
+    });
+});
+
+describe("deriveChromeState", () => {
+    it("is state1 whenever paneRoot is null, regardless of lastMultiPaneState", () => {
+        expect(deriveChromeState(null, "state2")).toBe("state1");
+        expect(deriveChromeState(null, "state3")).toBe("state1");
+    });
+
+    it("mirrors lastMultiPaneState once 2+ non-details panes are tiled", () => {
+        const root = split(makeLeaf(pane("p1")), makeLeaf(pane("p2", 2)));
+        expect(deriveChromeState(root, "state2")).toBe("state2");
+        expect(deriveChromeState(root, "state3")).toBe("state3");
+    });
+
+    it("stays state1 when only a details pane accompanies a single conversation", () => {
+        const detailsPane: PaneContent = { paneId: "p2", kind: "details", channelId: 1, channelName: "" };
+        const root = split(makeLeaf(pane("p1")), makeLeaf(detailsPane));
+        expect(deriveChromeState(root, "state2")).toBe("state1");
+        expect(deriveChromeState(root, "state3")).toBe("state1");
+    });
+});
+
+describe("toggleMultiPaneState", () => {
+    it("toggles state2 to state3", () => {
+        expect(toggleMultiPaneState("state2")).toBe("state3");
+    });
+
+    it("toggles state3 to state2", () => {
+        expect(toggleMultiPaneState("state3")).toBe("state2");
     });
 });
