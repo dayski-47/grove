@@ -85,7 +85,9 @@ export function PaneChrome({
             )}
 
             {mode === "state3" && (
-                <button className="pane-chrome-circle" onClick={onToggleMultiPaneState} aria-label="Collapse pane labels" title="Ctrl+Shift+." />
+                <button className="pane-chrome-circle" onClick={onToggleMultiPaneState} aria-label="Collapse pane labels" title="Ctrl+Shift+.">
+                    <ChromeLeafIcon />
+                </button>
             )}
 
             {totalUnread > 0 && (
