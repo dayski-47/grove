@@ -48,13 +48,13 @@ export function usePaneKeybinds(actions: PaneKeybindActions): void {
                 return;
             }
 
-            if (e.ctrlKey && e.shiftKey && e.key === ",") {
+            if (e.ctrlKey && e.shiftKey && e.code === "Comma") {
                 e.preventDefault();
                 a.onCollapseChrome();
                 return;
             }
 
-            if (e.ctrlKey && e.shiftKey && e.key === ".") {
+            if (e.ctrlKey && e.shiftKey && e.code === "Period") {
                 e.preventDefault();
                 a.onExpandChrome();
                 return;
