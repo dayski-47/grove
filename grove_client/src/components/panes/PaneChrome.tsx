@@ -31,9 +31,11 @@ export function PaneChrome({
             role="toolbar"
             aria-label="Grove navigation"
         >
-            <button className="pane-chrome-logo" onClick={onLogoClick} aria-label="Open command palette" title="Ctrl+K">
-                <ChromeLeafIcon />
-            </button>
+            {mode === "state1" && (
+                <button className="pane-chrome-logo" onClick={onLogoClick} aria-label="Open command palette" title="Ctrl+K">
+                    <ChromeLeafIcon />
+                </button>
+            )}
 
             {mode === "state1" && (
                 <div className="pane-chrome-tabs" role="tablist" aria-label="Open channels">
@@ -66,7 +68,7 @@ export function PaneChrome({
                     onMouseEnter={() => onPillHoverChange(true)}
                     onMouseLeave={() => onPillHoverChange(false)}
                     aria-label="Expand pane labels"
-                    title="Ctrl+Shift+]"
+                    title="Ctrl+Shift+,"
                 >
                     {paneLeaves.map((leaf, i) => (
                         <span
@@ -83,7 +85,7 @@ export function PaneChrome({
             )}
 
             {mode === "state3" && (
-                <button className="pane-chrome-circle" onClick={onToggleMultiPaneState} aria-label="Collapse pane labels" title="Ctrl+Shift+[" />
+                <button className="pane-chrome-circle" onClick={onToggleMultiPaneState} aria-label="Collapse pane labels" title="Ctrl+Shift+." />
             )}
 
             {totalUnread > 0 && (

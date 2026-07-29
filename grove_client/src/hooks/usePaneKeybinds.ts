@@ -22,7 +22,7 @@ const ARROW_DIRECTION: Record<string, "left" | "right" | "up" | "down"> = {
 
 /**
  * Registers the pane-tiling keybinds (Ctrl+Shift+Enter, Ctrl+Shift+<Arrow>,
- * Ctrl+Shift+[ / ], Ctrl+Shift+Space, Ctrl+Shift+W, Ctrl+1-8) once, for the
+ * Ctrl+Shift+, / ., Ctrl+Shift+Space, Ctrl+Shift+W, Ctrl+1-8) once, for the
  * lifetime of the component. `actions` is read through a ref so this never
  * needs to re-register the listener — same convention as the paletteModeRef
  * effect in AppShell.tsx.
@@ -48,13 +48,13 @@ export function usePaneKeybinds(actions: PaneKeybindActions): void {
                 return;
             }
 
-            if (e.ctrlKey && e.shiftKey && e.key === "[") {
+            if (e.ctrlKey && e.shiftKey && e.key === ",") {
                 e.preventDefault();
                 a.onCollapseChrome();
                 return;
             }
 
-            if (e.ctrlKey && e.shiftKey && e.key === "]") {
+            if (e.ctrlKey && e.shiftKey && e.key === ".") {
                 e.preventDefault();
                 a.onExpandChrome();
                 return;
