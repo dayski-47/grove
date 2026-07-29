@@ -2601,6 +2601,60 @@ input, textarea {
 }
 
 /* ============================================================
+   COMMAND ISLAND — Dynamic-Island-style morph
+   ============================================================ */
+
+.command-island-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  justify-content: center;
+  padding-top: 12px;
+}
+
+.command-island {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 14px;
+  background: #000;
+  border-radius: var(--r-full);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: command-island-grow var(--dur-normal) var(--ease-out);
+  transform-origin: center;
+}
+
+@keyframes command-island-grow {
+  from { clip-path: circle(0% at 50% 50%); opacity: 0; }
+  to   { clip-path: circle(75% at 50% 50%); opacity: 1; }
+}
+
+.command-island-item {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast);
+}
+
+.command-island-item.focused {
+  color: var(--leaf-bright);
+  background: rgba(106, 184, 112, 0.18);
+  transform: scale(1.08);
+}
+
+.command-island-item.inert {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* ============================================================
    NOTIFICATION PANEL
    ============================================================ */
 
