@@ -1100,49 +1100,106 @@ export function AppShell({
         <div className="dw-shell dw-shell-v3">
             <CornerBranches />
             {/* ── Top bar ─────────────────────────────── */}
-            <header className="dw-topbar" role="banner">
-                <PaneChrome
-                    mode={chromeState}
-                    tabs={openTabs}
-                    activeTabId={activeChannelId}
-                    onSelectTab={(id, name, kind) => openOrFill(id, name, kind)}
-                    onCloseTab={closeTab}
-                    paneLeaves={paneRoot !== null ? getLeaves(paneRoot) : []}
-                    focusedPaneId={focusedPaneId}
-                    onFocusPane={setFocusedPaneId}
-                    onPillHoverChange={setPillHovered}
-                    totalUnread={totalUnread}
-                    onLogoClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
-                    onToggleMultiPaneState={() => setLastMultiPaneState(toggleMultiPaneState)}
-                />
-
-                <div className="dw-topbar-actions">
-                    {/* Call bar — inline when in call */}
-                    {callState !== "idle" && (
-                        <CallInline
-                            callState={callState}
-                            remoteUserId={remoteUserId}
-                            usernames={usernames}
-                            onAccept={acceptCall}
-                            onDecline={declineCall}
-                            onHangup={hangup}
-                        />
-                    )}
-                    <div
-                        className={`dw-topbar-conn ${connected ? "online" : "offline"}`}
-                        title={connected ? "Connected" : "Reconnecting…"}
-                        aria-label={connected ? "Connected" : "Reconnecting"}
+            {/* State 1 keeps the full floating bar with the utility cluster (notif/friends/avatar).
+                State 2/3 render only the chrome shape (pill/circle), positioned independently by CSS
+                (see .pane-chrome-state2/.pane-chrome-state3) — the utility cluster tucks away entirely
+                in those states, reachable only via the Dynamic Island or Ctrl+K per the design spec. */}
+            {chromeState === "state1" ? (
+                <header className="dw-topbar" role="banner">
+                    <PaneChrome
+                        mode={chromeState}
+                        tabs={openTabs}
+                        activeTabId={activeChannelId}
+                        onSelectTab={(id, name, kind) => openOrFill(id, name, kind)}
+                        onCloseTab={closeTab}
+                        paneLeaves={paneRoot !== null ? getLeaves(paneRoot) : []}
+                        focusedPaneId={focusedPaneId}
+                        onFocusPane={setFocusedPaneId}
+                        onPillHoverChange={setPillHovered}
+                        totalUnread={totalUnread}
+                        onLogoClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
+                        onToggleMultiPaneState={() => setLastMultiPaneState(toggleMultiPaneState)}
                     />
-                    <div className="dw-notif-wrap" ref={notifRef}>
+
+                    <div className="dw-topbar-actions">
+                        {callState !== "idle" && (
+                            <CallInline
+                                callState={callState}
+                                remoteUserId={remoteUserId}
+                                usernames={usernames}
+                                onAccept={acceptCall}
+                                onDecline={declineCall}
+                                onHangup={hangup}
+                            />
+                        )}
+                        <div
+                            className={`dw-topbar-conn ${connected ? "online" : "offline"}`}
+                            title={connected ? "Connected" : "Reconnecting…"}
+                            aria-label={connected ? "Connected" : "Reconnecting"}
+                        />
+                        <div className="dw-notif-wrap" ref={notifRef}>
+                            <button
+                                className={`dw-topbar-btn${notifOpen ? " active" : ""}`}
+                                onClick={() => setNotifOpen(v => !v)}
+                                aria-label={`Notifications${totalUnread > 0 ? ` — ${totalUnread} unread` : ""}`}
+                                title="Notifications"
+                            >
+                                <BellIcon count={totalUnread} />
+                            </button>
+                            {notifOpen && (
+                                <NotifPanel
+                                    channels={channels}
+                                    dms={dms}
+                                    unreads={unreadByChannel}
+                                    onNavigate={(id, name, kind) => openOrFill(id, name, kind)}
+                                    onClose={() => setNotifOpen(false)}
+                                />
+                            )}
+                        </div>
                         <button
-                            className={`dw-topbar-btn${notifOpen ? " active" : ""}`}
-                            onClick={() => setNotifOpen(v => !v)}
-                            aria-label={`Notifications${totalUnread > 0 ? ` — ${totalUnread} unread` : ""}`}
-                            title="Notifications"
+                            className={`dw-topbar-btn${activePage === "friends" ? " active" : ""}`}
+                            onClick={() => setActivePage(p => p === "friends" ? "chat" : "friends")}
+                            aria-label="Friends"
+                            title="Friends"
                         >
-                            <BellIcon count={totalUnread} />
+                            <FriendsIcon />
                         </button>
-                        {notifOpen && (
+                        <button
+                            className="dw-topbar-avatar"
+                            style={{ background: avatarBg(userId) }}
+                            onClick={() => { setDrawerUid(userId); setDrawerOpen(true); resolveProfile(userId); }}
+                            aria-label={`Your profile — ${myName}`}
+                            title={myName}
+                        >
+                            {avatarInitial(myName)}
+                            <span
+                                className={`dw-topbar-status ${myStatus === "offline" ? "offline" : myStatus === "dnd" ? "dnd" : myStatus === "idle" ? "idle" : "online"}`}
+                                aria-hidden="true"
+                            />
+                        </button>
+                    </div>
+                </header>
+            ) : (
+                <>
+                    <PaneChrome
+                        mode={chromeState}
+                        tabs={openTabs}
+                        activeTabId={activeChannelId}
+                        onSelectTab={(id, name, kind) => openOrFill(id, name, kind)}
+                        onCloseTab={closeTab}
+                        paneLeaves={paneRoot !== null ? getLeaves(paneRoot) : []}
+                        focusedPaneId={focusedPaneId}
+                        onFocusPane={setFocusedPaneId}
+                        onPillHoverChange={setPillHovered}
+                        totalUnread={totalUnread}
+                        onLogoClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
+                        onToggleMultiPaneState={() => setLastMultiPaneState(toggleMultiPaneState)}
+                    />
+                    {/* Notifications still need to be reachable (via the Dynamic Island's
+                        "notifications" action) even though the bell button itself is gone
+                        in this state — render the panel floating near the chrome shape. */}
+                    {notifOpen && (
+                        <div className="dw-notif-wrap-floating">
                             <NotifPanel
                                 channels={channels}
                                 dms={dms}
@@ -1150,31 +1207,10 @@ export function AppShell({
                                 onNavigate={(id, name, kind) => openOrFill(id, name, kind)}
                                 onClose={() => setNotifOpen(false)}
                             />
-                        )}
-                    </div>
-                    <button
-                        className={`dw-topbar-btn${activePage === "friends" ? " active" : ""}`}
-                        onClick={() => setActivePage(p => p === "friends" ? "chat" : "friends")}
-                        aria-label="Friends"
-                        title="Friends"
-                    >
-                        <FriendsIcon />
-                    </button>
-                    <button
-                        className="dw-topbar-avatar"
-                        style={{ background: avatarBg(userId) }}
-                        onClick={() => { setDrawerUid(userId); setDrawerOpen(true); resolveProfile(userId); }}
-                        aria-label={`Your profile — ${myName}`}
-                        title={myName}
-                    >
-                        {avatarInitial(myName)}
-                        <span
-                            className={`dw-topbar-status ${myStatus === "offline" ? "offline" : myStatus === "dnd" ? "dnd" : myStatus === "idle" ? "idle" : "online"}`}
-                            aria-hidden="true"
-                        />
-                    </button>
-                </div>
-            </header>
+                        </div>
+                    )}
+                </>
+            )}
 
             {/* ── Content ─────────────────────────────── */}
             <main className="dw-content" aria-label="Main content">

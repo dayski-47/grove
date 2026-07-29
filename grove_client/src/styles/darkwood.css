@@ -2617,6 +2617,31 @@ input, textarea {
 
 .pane-chrome-circle:hover { transform: scale(1.3); background: var(--leaf-glow); }
 
+/* State 2/3 — chrome is no longer inside the fixed topbar, it floats
+   independently on the left edge, clear of the 60px nav rail. */
+.pane-chrome-state2,
+.pane-chrome-state3 {
+  position: fixed;
+  left: 68px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--z-panel);
+  margin: 0;
+}
+
+.dw-notif-wrap-floating {
+  position: fixed;
+  left: 68px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--z-panel);
+  margin-left: 40px;
+}
+
+.dw-notif-wrap-floating .dw-notif-panel {
+  position: static;
+}
+
 .pane-chrome-unread {
   min-width: 16px;
   height: 16px;
