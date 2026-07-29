@@ -644,6 +644,7 @@ export function AppShell({
     async function fillFocusedPane(channelId: number, displayName: string, kind: "channel" | "dm") {
         markRecentAndClearUnread(channelId);
         setPaletteOpen(false);
+        setActivePage("chat"); // navigating away from Friends must always surface the pane grid
         const targetId = focusedPaneId
             ?? (paneRoot !== null ? getLeaves(paneRoot).find(l => l.pane.kind !== "details")?.pane.paneId ?? null : null);
         if (targetId !== null) {

@@ -22,7 +22,7 @@ const ARROW_DIRECTION: Record<string, "left" | "right" | "up" | "down"> = {
 
 /**
  * Registers the pane-tiling keybinds (Ctrl+Shift+Enter, Ctrl+Shift+<Arrow>,
- * Ctrl+Shift+[ / ], Ctrl+Shift+Space, Ctrl+W, Ctrl+1-8) once, for the
+ * Ctrl+Shift+[ / ], Ctrl+Shift+Space, Ctrl+Shift+W, Ctrl+1-8) once, for the
  * lifetime of the component. `actions` is read through a ref so this never
  * needs to re-register the listener — same convention as the paletteModeRef
  * effect in AppShell.tsx.
@@ -68,7 +68,10 @@ export function usePaneKeybinds(actions: PaneKeybindActions): void {
 
             if (!a.isPaneModeActive()) return;
 
-            if (e.ctrlKey && !e.shiftKey && e.key === "w") {
+            // Plain Ctrl+W is a browser-reserved close-tab shortcut that
+            // preventDefault() cannot reliably override (Firefox especially
+            // ignores it outright) — Ctrl+Shift+W avoids the collision.
+            if (e.ctrlKey && e.shiftKey && e.key === "W") {
                 const targetId = a.getHoveredPaneId() ?? a.getFocusedPaneId();
                 if (targetId === null) return;
                 e.preventDefault();
