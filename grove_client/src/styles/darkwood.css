@@ -2678,13 +2678,6 @@ input, textarea {
   background: #000;
   border-radius: var(--r-full);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  animation: command-island-grow var(--dur-normal) var(--ease-out);
-  transform-origin: center;
-}
-
-@keyframes command-island-grow {
-  from { clip-path: circle(0% at 50% 50%); opacity: 0; }
-  to   { clip-path: circle(75% at 50% 50%); opacity: 1; }
 }
 
 .command-island-item {

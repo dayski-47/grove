@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 
 export type IslandAction = "settings" | "channels" | "messages" | "users" | "notifications" | "activity" | "more";
 
@@ -65,7 +66,10 @@ export function CommandIsland({ open, onSelect, onClose }: CommandIslandProps) {
 
     return (
         <div className="command-island-backdrop" onClick={onClose} aria-hidden="true">
-            <div
+            <motion.div
+                layoutId="chrome-morph"
+                layout
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                 className="command-island"
                 role="menu"
                 aria-label="Command island"
@@ -85,7 +89,7 @@ export function CommandIsland({ open, onSelect, onClose }: CommandIslandProps) {
                         <span aria-hidden="true">{item.icon}</span>
                     </button>
                 ))}
-            </div>
+            </motion.div>
         </div>
     );
 }

@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import type { LeafNode } from "../../paneLayout";
 import { KIND_ACCENT } from "./PaneGrid";
 
@@ -22,7 +23,14 @@ export function PaneChrome({
     totalUnread, onLogoClick, onToggleMultiPaneState,
 }: PaneChromeProps) {
     return (
-        <div className={`pane-chrome pane-chrome-${mode}`} role="toolbar" aria-label="Grove navigation">
+        <motion.div
+            layoutId="chrome-morph"
+            layout
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className={`pane-chrome pane-chrome-${mode}`}
+            role="toolbar"
+            aria-label="Grove navigation"
+        >
             <button className="pane-chrome-logo" onClick={onLogoClick} aria-label="Open command palette" title="Ctrl+K">
                 <ChromeLeafIcon />
             </button>
@@ -83,7 +91,7 @@ export function PaneChrome({
                     {totalUnread > 99 ? "99+" : totalUnread}
                 </span>
             )}
-        </div>
+        </motion.div>
     );
 }
 

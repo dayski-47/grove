@@ -1106,20 +1106,22 @@ export function AppShell({
                 in those states, reachable only via the Dynamic Island or Ctrl+K per the design spec. */}
             {chromeState === "state1" ? (
                 <header className="dw-topbar" role="banner">
-                    <PaneChrome
-                        mode={chromeState}
-                        tabs={openTabs}
-                        activeTabId={activeChannelId}
-                        onSelectTab={(id, name, kind) => openOrFill(id, name, kind)}
-                        onCloseTab={closeTab}
-                        paneLeaves={paneRoot !== null ? getLeaves(paneRoot) : []}
-                        focusedPaneId={focusedPaneId}
-                        onFocusPane={setFocusedPaneId}
-                        onPillHoverChange={setPillHovered}
-                        totalUnread={totalUnread}
-                        onLogoClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
-                        onToggleMultiPaneState={() => setLastMultiPaneState(toggleMultiPaneState)}
-                    />
+                    {!islandOpen && (
+                        <PaneChrome
+                            mode={chromeState}
+                            tabs={openTabs}
+                            activeTabId={activeChannelId}
+                            onSelectTab={(id, name, kind) => openOrFill(id, name, kind)}
+                            onCloseTab={closeTab}
+                            paneLeaves={paneRoot !== null ? getLeaves(paneRoot) : []}
+                            focusedPaneId={focusedPaneId}
+                            onFocusPane={setFocusedPaneId}
+                            onPillHoverChange={setPillHovered}
+                            totalUnread={totalUnread}
+                            onLogoClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
+                            onToggleMultiPaneState={() => setLastMultiPaneState(toggleMultiPaneState)}
+                        />
+                    )}
 
                     <div className="dw-topbar-actions">
                         {callState !== "idle" && (
@@ -1181,20 +1183,22 @@ export function AppShell({
                 </header>
             ) : (
                 <>
-                    <PaneChrome
-                        mode={chromeState}
-                        tabs={openTabs}
-                        activeTabId={activeChannelId}
-                        onSelectTab={(id, name, kind) => openOrFill(id, name, kind)}
-                        onCloseTab={closeTab}
-                        paneLeaves={paneRoot !== null ? getLeaves(paneRoot) : []}
-                        focusedPaneId={focusedPaneId}
-                        onFocusPane={setFocusedPaneId}
-                        onPillHoverChange={setPillHovered}
-                        totalUnread={totalUnread}
-                        onLogoClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
-                        onToggleMultiPaneState={() => setLastMultiPaneState(toggleMultiPaneState)}
-                    />
+                    {!islandOpen && (
+                        <PaneChrome
+                            mode={chromeState}
+                            tabs={openTabs}
+                            activeTabId={activeChannelId}
+                            onSelectTab={(id, name, kind) => openOrFill(id, name, kind)}
+                            onCloseTab={closeTab}
+                            paneLeaves={paneRoot !== null ? getLeaves(paneRoot) : []}
+                            focusedPaneId={focusedPaneId}
+                            onFocusPane={setFocusedPaneId}
+                            onPillHoverChange={setPillHovered}
+                            totalUnread={totalUnread}
+                            onLogoClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
+                            onToggleMultiPaneState={() => setLastMultiPaneState(toggleMultiPaneState)}
+                        />
+                    )}
                     {/* Notifications still need to be reachable (via the Dynamic Island's
                         "notifications" action) even though the bell button itself is gone
                         in this state — render the panel floating near the chrome shape. */}
