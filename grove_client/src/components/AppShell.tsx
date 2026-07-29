@@ -1069,6 +1069,8 @@ export function AppShell({
     const onlineFriends = friends.filter(f => f.online);
     const friendList    = friendTab === "online" ? onlineFriends : friends;
 
+    const chromeState = deriveChromeState(paneRoot, lastMultiPaneState);
+
     /* ── Render ─────────────────────────────────────────── */
 
     return (
@@ -1076,41 +1078,20 @@ export function AppShell({
             <CornerBranches />
             {/* ── Top bar ─────────────────────────────── */}
             <header className="dw-topbar" role="banner">
-                <button
-                    className="dw-topbar-logo"
-                    onClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
-                    aria-label="Open command palette"
-                    title="Open navigation (Ctrl+K)"
-                >
-                    <LeafIcon />
-                </button>
-
-                <button
-                    className="dw-topbar-location"
-                    onClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
-                    aria-label="Navigate to a channel"
-                    title="Ctrl+K to navigate"
-                >
-                    {activeChannelId !== null ? (
-                        <>
-                            <span className="dw-topbar-prefix">
-                                {activeChannelKind === "dm" ? "@" : "#"}
-                            </span>
-                            <span className="dw-topbar-name">{activeDisplayName}</span>
-                        </>
-                    ) : activePage === "friends" ? (
-                        <span className="dw-topbar-name">Friends</span>
-                    ) : (
-                        <span className="dw-topbar-name dw-topbar-hint">
-                            Press <kbd>Ctrl K</kbd> to navigate
-                        </span>
-                    )}
-                    {totalUnread > 0 && (
-                        <span className="dw-topbar-unread" aria-label={`${totalUnread} unread`}>
-                            {totalUnread > 99 ? "99+" : totalUnread}
-                        </span>
-                    )}
-                </button>
+                <PaneChrome
+                    mode={chromeState}
+                    tabs={openTabs}
+                    activeTabId={activeChannelId}
+                    onSelectTab={(id, name, kind) => openOrFill(id, name, kind)}
+                    onCloseTab={closeTab}
+                    paneLeaves={paneRoot !== null ? getLeaves(paneRoot) : []}
+                    focusedPaneId={focusedPaneId}
+                    onFocusPane={setFocusedPaneId}
+                    onPillHoverChange={setPillHovered}
+                    totalUnread={totalUnread}
+                    onLogoClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
+                    onToggleMultiPaneState={() => setLastMultiPaneState(toggleMultiPaneState)}
+                />
 
                 <div className="dw-topbar-actions">
                     {/* Call bar — inline when in call */}
@@ -1172,15 +1153,6 @@ export function AppShell({
                 </div>
             </header>
 
-            {/* ── Tab bar ─────────────────────────────── */}
-            <TabBar
-                tabs={openTabs}
-                activeId={activeChannelId}
-                unreads={unreadByChannel}
-                onSelect={openChannel}
-                onClose={closeTab}
-            />
-
             {/* ── Content ─────────────────────────────── */}
             <main className="dw-content" aria-label="Main content">
                 {activePage === "friends" ? (
@@ -1199,23 +1171,29 @@ export function AppShell({
                         onCall={initiateCall}
                         onUserClick={uid => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
                     />
+                ) : paneRoot !== null ? (
+                    <PaneGrid
+                        root={paneRoot}
+                        chromeState={chromeState === "state2" ? "state2" : "state3"}
+                        focusedPaneId={focusedPaneId}
+                        pillHovered={pillHovered}
+                        onFocusPane={setFocusedPaneId}
+                        onHoverPane={setHoveredPaneId}
+                        onOpenDetails={paneId => {
+                            const leaf = findLeafById(paneRoot, paneId);
+                            if (!leaf || leaf.pane.channelId === null) return;
+                            openDetailsForPane(leaf.pane.channelId, leaf.pane.channelName, paneId);
+                        }}
+                        renderContent={renderPaneContent}
+                    />
                 ) : activeChannelId !== null ? (
                     <ChatView
                         channelId={activeChannelId}
                         channelName={activeDisplayName}
                         isDm={activeChannelKind === "dm"}
                         myRole={myRole}
-                        onOpenSettings={() => {
-                            setSettingsOpen(true);
-                            if (activeChannelId !== null && !(activeChannelId in myChannelRoles)) {
-                                getChannelMembers(activeChannelId, token)
-                                    .then(members => {
-                                        const me = members.find(m => m.user_id === userId);
-                                        if (me) setMyChannelRoles(prev => ({ ...prev, [activeChannelId]: me.role }));
-                                    })
-                                    .catch(() => {});
-                            }
-                        }}
+                        onOpenSettings={() => { setSettingsChannelId(activeChannelId); setSettingsOpen(true); }}
+                        onOpenDetails={() => openDetailsForPane(activeChannelId, activeDisplayName, null)}
                         messages={activeMessages}
                         usernames={usernames}
                         currentUserId={userId}
@@ -1227,32 +1205,14 @@ export function AppShell({
                         reactions={activeReactions}
                         pins={activePins}
                         mentionUsers={mentionUsers}
-                        onSend={text => {
-                            const now = Math.floor(Date.now() / 1000);
-                            const clientId = crypto.randomUUID();
-                            setMessages(prev => ({
-                                ...prev,
-                                [activeChannelId]: [...(prev[activeChannelId] ?? []), { userId, text, timestamp: now, pending: true, clientId }],
-                            }));
-                            socketRef.current?.sendText(activeChannelId, text);
-                        }}
+                        onSend={text => sendToChannel(activeChannelId, text)}
                         onTyping={() => socketRef.current?.sendTyping(activeChannelId)}
                         onLoadMore={() => loadMoreMessages(activeChannelId)}
                         onReact={(msgId, emoji) => socketRef.current?.sendReaction(activeChannelId, msgId, emoji)}
                         onEdit={(msgId, text) => socketRef.current?.sendEdit(activeChannelId, msgId, text)}
                         onDelete={msgId => socketRef.current?.sendDelete(activeChannelId, msgId)}
-                        onPin={async msgId => {
-                            await pinMessage(msgId, token).catch(() => {});
-                            const list = await getChannelPins(activeChannelId, token).catch(() => [] as PinnedMessage[]);
-                            setPins(prev => ({ ...prev, [activeChannelId]: list }));
-                        }}
-                        onUnpin={async msgId => {
-                            await unpinMessage(msgId, token).catch(() => {});
-                            setPins(prev => ({
-                                ...prev,
-                                [activeChannelId]: (prev[activeChannelId] ?? []).filter(p => p.message_id !== msgId),
-                            }));
-                        }}
+                        onPin={msgId => pinInChannel(activeChannelId, msgId)}
+                        onUnpin={msgId => unpinInChannel(activeChannelId, msgId)}
                         onUserClick={(uid, _e) => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
                     />
                 ) : (
@@ -1260,22 +1220,24 @@ export function AppShell({
                 )}
             </main>
 
-            {settingsOpen && activeChannelId !== null && activeChannelKind === "channel" && (() => {
-                const activeChannel = channels.find(c => c.id === activeChannelId);
-                if (!activeChannel) return null;
+            <CommandIsland open={islandOpen} onSelect={handleIslandAction} onClose={() => setIslandOpen(false)} />
+
+            {settingsOpen && settingsChannelId !== null && (() => {
+                const settingsChannel = channels.find(c => c.id === settingsChannelId);
+                if (!settingsChannel) return null;
                 return (
                     <ChannelSettingsModal
-                        channelId={activeChannelId}
-                        channelName={activeChannel.name}
-                        description={activeChannel.description}
-                        category={activeChannel.category}
-                        isPrivate={activeChannel.is_private}
+                        channelId={settingsChannelId}
+                        channelName={settingsChannel.name}
+                        description={settingsChannel.description}
+                        category={settingsChannel.category}
+                        isPrivate={settingsChannel.is_private}
                         token={token}
                         currentUserId={userId}
-                        myRole={myChannelRoles[activeChannelId] ?? "member"}
+                        myRole={myChannelRoles[settingsChannelId] ?? "member"}
                         onClose={() => setSettingsOpen(false)}
                         onUpdated={updates => setChannels(prev => prev.map(c => (
-                            c.id === activeChannelId ? { ...c, ...updates } : c
+                            c.id === settingsChannelId ? { ...c, ...updates } : c
                         )))}
                     />
                 );
@@ -1806,53 +1768,6 @@ function ProfileDrawer({
     );
 }
 
-/* ── Tab bar ─────────────────────────────────────────────── */
-
-function TabBar({
-    tabs, activeId, unreads, onSelect, onClose,
-}: {
-    tabs:     { id: number; name: string; kind: "channel" | "dm" }[];
-    activeId: number | null;
-    unreads:  Record<number, number>;
-    onSelect: (id: number, name: string, kind: "channel" | "dm") => void;
-    onClose:  (id: number) => void;
-}) {
-    if (tabs.length === 0) return null;
-    return (
-        <div className="dw-tabbar" role="tablist" aria-label="Open channels">
-            {tabs.map(tab => (
-                <div
-                    key={tab.id}
-                    role="tab"
-                    className={`dw-tabitem${tab.id === activeId ? " active" : ""}${(unreads[tab.id] ?? 0) > 0 ? " unread" : ""}`}
-                    aria-selected={tab.id === activeId}
-                >
-                    <button
-                        className="dw-tabitem-main"
-                        onClick={() => onSelect(tab.id, tab.name, tab.kind)}
-                        title={tab.name}
-                    >
-                        <span className="dw-tabitem-prefix">{tab.kind === "dm" ? "@" : "#"}</span>
-                        <span className="dw-tabitem-name">{tab.name}</span>
-                        {(unreads[tab.id] ?? 0) > 0 && (
-                            <span className="dw-tabitem-badge">
-                                {unreads[tab.id] > 99 ? "99+" : unreads[tab.id]}
-                            </span>
-                        )}
-                    </button>
-                    <button
-                        className="dw-tabitem-close"
-                        onClick={e => { e.stopPropagation(); onClose(tab.id); }}
-                        aria-label={`Close ${tab.name}`}
-                    >
-                        <CloseIcon />
-                    </button>
-                </div>
-            ))}
-        </div>
-    );
-}
-
 /* ── Notification panel ──────────────────────────────────── */
 
 function NotifPanel({
@@ -1943,10 +1858,6 @@ function ToastContainer({ toasts, onDismiss, onNavigate }: {
             ))}
         </div>
     );
-}
-
-function LeafIcon() {
-    return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>;
 }
 
 function FriendsIcon() {
