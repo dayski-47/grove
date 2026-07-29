@@ -42,20 +42,30 @@ export function PaneGrid({
     const indexById = new Map(getLeaves(root).map((leaf, i) => [leaf.pane.paneId, i + 1]));
     return (
         <div className={`pane-grid-root${chromeState === "state2" && pillHovered ? " pane-grid-dimmed" : ""}`}>
-            <PaneNode
-                node={root}
-                path={[]}
-                indexById={indexById}
-                chromeState={chromeState}
-                focusedPaneId={focusedPaneId}
-                pillHovered={pillHovered}
-                onFocusPane={onFocusPane}
-                onHoverPane={onHoverPane}
-                onOpenDetails={onOpenDetails}
-                onClosePane={onClosePane}
-                onResizeSplit={onResizeSplit}
-                renderContent={renderContent}
-            />
+            <AnimatePresence initial={false}>
+                <motion.div
+                    key={firstLeafId(root)}
+                    layout
+                    initial={{ opacity: 0, scale: 0.94 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                >
+                    <PaneNode
+                        node={root}
+                        path={[]}
+                        indexById={indexById}
+                        chromeState={chromeState}
+                        focusedPaneId={focusedPaneId}
+                        pillHovered={pillHovered}
+                        onFocusPane={onFocusPane}
+                        onHoverPane={onHoverPane}
+                        onOpenDetails={onOpenDetails}
+                        onClosePane={onClosePane}
+                        onResizeSplit={onResizeSplit}
+                        renderContent={renderContent}
+                    />
+                </motion.div>
+            </AnimatePresence>
         </div>
     );
 }
