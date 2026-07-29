@@ -28,7 +28,7 @@ export function PaneGrid({
 }: PaneGridProps) {
     const indexById = new Map(getLeaves(root).map((leaf, i) => [leaf.pane.paneId, i + 1]));
     return (
-        <div className={`pane-grid-root${pillHovered ? " pane-grid-dimmed" : ""}`}>
+        <div className={`pane-grid-root${chromeState === "state2" && pillHovered ? " pane-grid-dimmed" : ""}`}>
             <PaneNode
                 node={root}
                 indexById={indexById}

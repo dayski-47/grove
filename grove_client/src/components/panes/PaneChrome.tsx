@@ -64,6 +64,7 @@ export function PaneChrome({
                             key={leaf.pane.paneId}
                             className={`pane-chrome-pill-num${leaf.pane.paneId === focusedPaneId ? " active" : ""}`}
                             onMouseDown={e => { e.stopPropagation(); onFocusPane(leaf.pane.paneId); }}
+                            onClick={e => e.stopPropagation()}
                         >
                             {i + 1}
                         </span>

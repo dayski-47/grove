@@ -348,7 +348,9 @@ export function AppShell({
             const targetId = hoveredPaneId ?? focusedPaneId;
             if (targetId === null || countLeaves(paneRoot) >= MAX_PANES) return;
             const newPaneId = crypto.randomUUID();
-            setPaneRoot(splitDirectional(paneRoot, targetId, makeEmptyPaneContent(newPaneId), direction));
+            const result = splitDirectional(paneRoot, targetId, makeEmptyPaneContent(newPaneId), direction);
+            if (result === paneRoot) return; // no-op — targetId no longer exists in the tree
+            setPaneRoot(result);
             setFocusedPaneId(newPaneId);
         },
         onCollapseChrome: () => setLastMultiPaneState(prev => prev === "state2" ? "state3" : prev),
@@ -642,10 +644,13 @@ export function AppShell({
     async function fillFocusedPane(channelId: number, displayName: string, kind: "channel" | "dm") {
         markRecentAndClearUnread(channelId);
         setPaletteOpen(false);
-        if (focusedPaneId !== null) {
-            setPaneRoot(prev => prev === null ? prev : replacePaneContent(prev, focusedPaneId, {
-                paneId: focusedPaneId, kind, channelId, channelName: displayName,
+        const targetId = focusedPaneId
+            ?? (paneRoot !== null ? getLeaves(paneRoot).find(l => l.pane.kind !== "details")?.pane.paneId ?? null : null);
+        if (targetId !== null) {
+            setPaneRoot(prev => prev === null ? prev : replacePaneContent(prev, targetId, {
+                paneId: targetId, kind, channelId, channelName: displayName,
             }));
+            setFocusedPaneId(targetId);
         }
         await ensureChannelLoaded(channelId, kind);
     }
@@ -962,6 +967,7 @@ export function AppShell({
                 kind: activeChannelKind, channelId, channelName,
             });
             setPaneRoot(splitDirectional(firstLeaf, firstLeaf.pane.paneId, detailsContent, "right"));
+            setFocusedPaneId(firstLeaf.pane.paneId);
             return;
         }
         if (sourcePaneId === null) return;
@@ -1124,7 +1130,7 @@ export function AppShell({
                                 channels={channels}
                                 dms={dms}
                                 unreads={unreadByChannel}
-                                onNavigate={(id, name, kind) => openChannel(id, name, kind)}
+                                onNavigate={(id, name, kind) => openOrFill(id, name, kind)}
                                 onClose={() => setNotifOpen(false)}
                             />
                         )}
@@ -1339,7 +1345,7 @@ export function AppShell({
                                                 className="dw-palette-item"
                                                 role="option"
                                                 aria-selected={false}
-                                                onMouseDown={e => { e.preventDefault(); openChannel(ch.id, ch.name, "channel"); setPaletteOpen(false); }}
+                                                onMouseDown={e => { e.preventDefault(); openOrFill(ch.id, ch.name, "channel"); setPaletteOpen(false); }}
                                             >
                                                 <span className="dw-palette-icon dw-palette-hash">#</span>
                                                 <span className="dw-palette-label">{ch.name}</span>
@@ -1439,7 +1445,7 @@ export function AppShell({
             <ToastContainer
                 toasts={toasts}
                 onDismiss={dismissToast}
-                onNavigate={(id, name, kind) => openChannel(id, name, kind)}
+                onNavigate={(id, name, kind) => openOrFill(id, name, kind)}
             />
         </div>
     );
