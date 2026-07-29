@@ -2655,6 +2655,47 @@ input, textarea {
 }
 
 /* ============================================================
+   DETAILS PANE — satellite pane (links/files/photos)
+   ============================================================ */
+
+.details-pane {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.details-pane-empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.details-pane-section { border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+.details-pane-section:first-child { border-top: none; padding-top: 0; }
+
+.details-pane-heading {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: var(--sp-2);
+}
+
+.details-pane-empty-text { color: var(--text-muted); font-size: var(--text-sm); }
+
+.details-pane-link-list { display: flex; flex-direction: column; gap: 6px; }
+
+.details-pane-link-item a {
+  font-size: var(--text-sm);
+  color: var(--leaf-bright);
+  word-break: break-all;
+}
+
+/* ============================================================
    NOTIFICATION PANEL
    ============================================================ */
 
