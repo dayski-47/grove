@@ -45,6 +45,7 @@ export function PaneGrid({
             <AnimatePresence initial={false}>
                 <motion.div
                     key={firstLeafId(root)}
+                    className="pane-split-cell"
                     layout
                     initial={{ opacity: 0, scale: 0.94 }}
                     animate={{ opacity: 1, scale: 1 }}
