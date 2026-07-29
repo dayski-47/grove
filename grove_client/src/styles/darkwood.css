@@ -640,6 +640,37 @@ input, textarea {
   flex: 1;
 }
 
+/* Minimal header — State 3 tiled panes: slim strip, left accent, no gear/details */
+.dw-chat-header-minimal {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border-left: 3px solid var(--leaf-bright);
+  border-bottom: 1px solid var(--border);
+}
+
+.dw-chat-header-minimal .dw-chat-name {
+  font-size: var(--text-sm);
+}
+
+.dw-chat-close-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  line-height: 1;
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+
+.dw-chat-close-btn:hover {
+  color: var(--danger);
+  background: var(--surface-2);
+}
+
 .dw-chat-actions { display: flex; gap: var(--sp-1); }
 
 .dw-icon-btn {
@@ -2789,6 +2820,15 @@ input, textarea {
 }
 
 .pane-leaf-header-details-btn:hover { color: var(--leaf-bright); }
+
+.pane-leaf-header-close-btn {
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+.pane-leaf-header-close-btn:hover { color: var(--danger); }
 
 .pane-leaf-content {
   flex: 1;

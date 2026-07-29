@@ -15,6 +15,11 @@ interface ChatViewProps {
     myRole:         ChannelRole;
     onOpenSettings?: () => void;
     onOpenDetails?:  () => void;
+    /** "full" (default): name + gear + details — State 1's single conversation.
+        "minimal": name only, no gear/details — State 3's per-pane strip.
+        "none": no header at all — State 2's zero-chrome panes. */
+    headerMode?:  "full" | "minimal" | "none";
+    onClosePane?: () => void;
     messages:     DisplayMessage[];
     usernames:    Record<number, string>;
     currentUserId: number;
@@ -39,6 +44,7 @@ interface ChatViewProps {
 
 export function ChatView({
     channelId, channelName, isDm, myRole, onOpenSettings, onOpenDetails,
+    headerMode = "full", onClosePane,
     messages, usernames, currentUserId, myUsername,
     typingNames, connected,
     hasMore, loadingMore,
@@ -84,32 +90,47 @@ export function ChatView({
 
     return (
         <div className="dw-chat">
-            {/* Header */}
-            <header className="dw-chat-header">
-                <span className="dw-chat-prefix" aria-hidden="true">
-                    {isDm ? "@" : "#"}
-                </span>
-                <h2 className="dw-chat-name">{channelName}</h2>
-                {!isDm && onOpenSettings && (
-                    <button
-                        className="dw-chat-settings-btn"
-                        onClick={onOpenSettings}
-                        aria-label="Channel settings"
-                    >
-                        ⚙
-                    </button>
-                )}
-                {onOpenDetails && (
-                    <button
-                        className="dw-chat-details-btn"
-                        onClick={onOpenDetails}
-                        aria-label="Open details"
-                        title="Details"
-                    >
-                        ⓘ
-                    </button>
-                )}
-            </header>
+            {/* Header — omitted entirely in "none" (State 2, zero chrome) */}
+            {headerMode !== "none" && (
+                <header
+                    className={`dw-chat-header${headerMode === "minimal" ? " dw-chat-header-minimal" : ""}`}
+                    style={headerMode === "minimal" ? { borderLeftColor: isDm ? "#5a9bd8" : "var(--leaf-bright)" } : undefined}
+                >
+                    <span className="dw-chat-prefix" aria-hidden="true">
+                        {isDm ? "@" : "#"}
+                    </span>
+                    <h2 className="dw-chat-name">{channelName}</h2>
+                    {headerMode === "full" && !isDm && onOpenSettings && (
+                        <button
+                            className="dw-chat-settings-btn"
+                            onClick={onOpenSettings}
+                            aria-label="Channel settings"
+                        >
+                            ⚙
+                        </button>
+                    )}
+                    {headerMode === "full" && onOpenDetails && (
+                        <button
+                            className="dw-chat-details-btn"
+                            onClick={onOpenDetails}
+                            aria-label="Open details"
+                            title="Details"
+                        >
+                            ⓘ
+                        </button>
+                    )}
+                    {headerMode === "minimal" && onClosePane && (
+                        <button
+                            className="dw-chat-close-btn"
+                            onClick={onClosePane}
+                            aria-label="Close pane"
+                            title="Close pane"
+                        >
+                            ×
+                        </button>
+                    )}
+                </header>
+            )}
 
             {/* Messages — keyed by channelId so refs/state reset on channel switch */}
             <MessageList

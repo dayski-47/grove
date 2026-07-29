@@ -356,37 +356,7 @@ export function AppShell({
         onCollapseChrome: () => setLastMultiPaneState(prev => prev === "state2" ? "state3" : prev),
         onExpandChrome:   () => setLastMultiPaneState(prev => prev === "state3" ? "state2" : prev),
         onToggleIsland:   () => setIslandOpen(v => !v),
-        onClosePane: (paneId: string) => {
-            if (paneRoot === null) return;
-            const result = removePane(paneRoot, paneId);
-            if (result === null || result.type === "leaf") {
-                const survivor = result?.type === "leaf" ? result.pane : null;
-                setPaneRoot(null);
-                if (survivor && survivor.channelId !== null) {
-                    const channelId = survivor.channelId;
-                    const kind = survivor.kind === "dm" ? "dm" : "channel";
-                    setActiveCh(channelId);
-                    setActiveName(survivor.channelName);
-                    setActiveKind(kind);
-                    // Restore this channel to the State 1 tab list — it may have
-                    // been filled into a pane mid-tiling without ever going
-                    // through openChannel/setOpenTabs.
-                    setOpenTabs(prev => prev.find(t => t.id === channelId)
-                        ? prev
-                        : [...prev, { id: channelId, name: survivor.channelName, kind }]);
-                } else {
-                    setActiveCh(null);
-                    setActiveName("");
-                }
-                setFocusedPaneId(null);
-                return;
-            }
-            setPaneRoot(result);
-            const remaining = getLeaves(result);
-            if (!remaining.some(l => l.pane.paneId === focusedPaneId)) {
-                setFocusedPaneId(remaining[0]?.pane.paneId ?? null);
-            }
-        },
+        onClosePane: closePane,
         onSwitchToPaneIndex: (index: number) => {
             if (paneRoot === null) return;
             const leaves = getLeaves(paneRoot);
@@ -951,6 +921,43 @@ export function AppShell({
         // "activity" and "more" are reserved for future icons — no action yet.
     }
 
+    /** Closes the pane identified by `paneId`, promoting the remaining leaf
+        back to the State-1 tab list when only one real pane is left (or
+        clearing the active channel entirely when none remain). Shared by
+        the Ctrl+Shift+W keybind (usePaneKeybinds) and the visible pane-close
+        buttons in ChatView's minimal header and PaneGrid's own header. */
+    function closePane(paneId: string) {
+        if (paneRoot === null) return;
+        const result = removePane(paneRoot, paneId);
+        if (result === null || result.type === "leaf") {
+            const survivor = result?.type === "leaf" ? result.pane : null;
+            setPaneRoot(null);
+            if (survivor && survivor.channelId !== null) {
+                const channelId = survivor.channelId;
+                const kind = survivor.kind === "dm" ? "dm" : "channel";
+                setActiveCh(channelId);
+                setActiveName(survivor.channelName);
+                setActiveKind(kind);
+                // Restore this channel to the State 1 tab list — it may have
+                // been filled into a pane mid-tiling without ever going
+                // through openChannel/setOpenTabs.
+                setOpenTabs(prev => prev.find(t => t.id === channelId)
+                    ? prev
+                    : [...prev, { id: channelId, name: survivor.channelName, kind }]);
+            } else {
+                setActiveCh(null);
+                setActiveName("");
+            }
+            setFocusedPaneId(null);
+            return;
+        }
+        setPaneRoot(result);
+        const remaining = getLeaves(result);
+        if (!remaining.some(l => l.pane.paneId === focusedPaneId)) {
+            setFocusedPaneId(remaining[0]?.pane.paneId ?? null);
+        }
+    }
+
     /** Opens (or reuses) a Details pane for `channelId`, tiled beside
         `sourcePaneId` — or, if pane mode isn't active yet, beside a
         synthesized first leaf built from the current State-1 conversation.
@@ -1029,6 +1036,9 @@ export function AppShell({
                 isDm={pane.kind === "dm"}
                 myRole={role}
                 onOpenSettings={pane.kind === "channel" ? () => { setSettingsChannelId(channelId); setSettingsOpen(true); } : undefined}
+                onOpenDetails={() => openDetailsForPane(channelId, pane.channelName, pane.paneId)}
+                headerMode={chromeState === "state1" ? "full" : chromeState === "state2" ? "none" : "minimal"}
+                onClosePane={() => closePane(pane.paneId)}
                 messages={messages[channelId] ?? []}
                 usernames={usernames}
                 currentUserId={userId}
@@ -1191,6 +1201,7 @@ export function AppShell({
                             if (!leaf || leaf.pane.channelId === null) return;
                             openDetailsForPane(leaf.pane.channelId, leaf.pane.channelName, paneId);
                         }}
+                        onClosePane={closePane}
                         renderContent={renderPaneContent}
                     />
                 ) : activeChannelId !== null ? (
