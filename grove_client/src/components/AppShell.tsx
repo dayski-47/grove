@@ -1094,6 +1094,59 @@ export function AppShell({
 
     const chromeState = deriveChromeState(paneRoot, lastMultiPaneState);
 
+    /** The tiled/single-conversation content for <main> — same element whether
+        chromeState is state1 (rendered bare) or state2/3 (rendered inside the
+        ".dw-tiled-body" row alongside the reserved ".dw-tiled-rail" chrome strip). */
+    const paneContent = paneRoot !== null ? (
+        <PaneGrid
+            root={paneRoot}
+            chromeState={chromeState === "state2" ? "state2" : "state3"}
+            focusedPaneId={focusedPaneId}
+            pillHovered={pillHovered}
+            onFocusPane={setFocusedPaneId}
+            onHoverPane={setHoveredPaneId}
+            onOpenDetails={paneId => {
+                const leaf = findLeafById(paneRoot, paneId);
+                if (!leaf || leaf.pane.channelId === null) return;
+                openDetailsForPane(leaf.pane.channelId, leaf.pane.channelName, paneId);
+            }}
+            onClosePane={closePane}
+            onResizeSplit={(path, ratio) => setPaneRoot(prev => prev === null ? prev : resizeSplit(prev, path, ratio))}
+            renderContent={renderPaneContent}
+        />
+    ) : activeChannelId !== null ? (
+        <ChatView
+            channelId={activeChannelId}
+            channelName={activeDisplayName}
+            isDm={activeChannelKind === "dm"}
+            myRole={myRole}
+            onOpenSettings={() => { setSettingsChannelId(activeChannelId); setSettingsOpen(true); }}
+            onOpenDetails={() => openDetailsForPane(activeChannelId, activeDisplayName, null)}
+            messages={activeMessages}
+            usernames={usernames}
+            currentUserId={userId}
+            myUsername={myName}
+            typingNames={activeTyping}
+            connected={connected}
+            hasMore={hasMore[activeChannelId] ?? false}
+            loadingMore={loadingMore.has(activeChannelId)}
+            reactions={activeReactions}
+            pins={activePins}
+            mentionUsers={mentionUsers}
+            onSend={text => sendToChannel(activeChannelId, text)}
+            onTyping={() => socketRef.current?.sendTyping(activeChannelId)}
+            onLoadMore={() => loadMoreMessages(activeChannelId)}
+            onReact={(msgId, emoji) => socketRef.current?.sendReaction(activeChannelId, msgId, emoji)}
+            onEdit={(msgId, text) => socketRef.current?.sendEdit(activeChannelId, msgId, text)}
+            onDelete={msgId => socketRef.current?.sendDelete(activeChannelId, msgId)}
+            onPin={msgId => pinInChannel(activeChannelId, msgId)}
+            onUnpin={msgId => unpinInChannel(activeChannelId, msgId)}
+            onUserClick={(uid, _e) => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
+        />
+    ) : (
+        <EmptyContent />
+    );
+
     /* ── Render ─────────────────────────────────────────── */
 
     return (
@@ -1101,10 +1154,11 @@ export function AppShell({
             <CornerBranches />
             {/* ── Top bar ─────────────────────────────── */}
             {/* State 1 keeps the full floating bar with the utility cluster (notif/friends/avatar).
-                State 2/3 render only the chrome shape (pill/circle), positioned independently by CSS
-                (see .pane-chrome-state2/.pane-chrome-state3) — the utility cluster tucks away entirely
-                in those states, reachable only via the Dynamic Island or Ctrl+K per the design spec. */}
-            {chromeState === "state1" ? (
+                State 2/3 render only the chrome shape (pill/circle), reserved in-flow inside the
+                ".dw-tiled-rail" strip alongside <main> (see below) — the utility cluster tucks away
+                entirely in those states, reachable only via the Dynamic Island or Ctrl+K per the
+                design spec. */}
+            {chromeState === "state1" && (
                 <header className="dw-topbar" role="banner">
                     {!islandOpen && (
                         <PaneChrome
@@ -1181,39 +1235,6 @@ export function AppShell({
                         </button>
                     </div>
                 </header>
-            ) : (
-                <>
-                    {!islandOpen && (
-                        <PaneChrome
-                            mode={chromeState}
-                            tabs={openTabs}
-                            activeTabId={activeChannelId}
-                            onSelectTab={(id, name, kind) => openOrFill(id, name, kind)}
-                            onCloseTab={closeTab}
-                            paneLeaves={paneRoot !== null ? getLeaves(paneRoot) : []}
-                            focusedPaneId={focusedPaneId}
-                            onFocusPane={setFocusedPaneId}
-                            onPillHoverChange={setPillHovered}
-                            totalUnread={totalUnread}
-                            onLogoClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
-                            onToggleMultiPaneState={() => setLastMultiPaneState(toggleMultiPaneState)}
-                        />
-                    )}
-                    {/* Notifications still need to be reachable (via the Dynamic Island's
-                        "notifications" action) even though the bell button itself is gone
-                        in this state — render the panel floating near the chrome shape. */}
-                    {notifOpen && (
-                        <div className="dw-notif-wrap-floating" ref={notifRef}>
-                            <NotifPanel
-                                channels={channels}
-                                dms={dms}
-                                unreads={unreadByChannel}
-                                onNavigate={(id, name, kind) => openOrFill(id, name, kind)}
-                                onClose={() => setNotifOpen(false)}
-                            />
-                        </div>
-                    )}
-                </>
             )}
 
             {/* ── Content ─────────────────────────────── */}
@@ -1234,54 +1255,49 @@ export function AppShell({
                         onCall={initiateCall}
                         onUserClick={uid => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
                     />
-                ) : paneRoot !== null ? (
-                    <PaneGrid
-                        root={paneRoot}
-                        chromeState={chromeState === "state2" ? "state2" : "state3"}
-                        focusedPaneId={focusedPaneId}
-                        pillHovered={pillHovered}
-                        onFocusPane={setFocusedPaneId}
-                        onHoverPane={setHoveredPaneId}
-                        onOpenDetails={paneId => {
-                            const leaf = findLeafById(paneRoot, paneId);
-                            if (!leaf || leaf.pane.channelId === null) return;
-                            openDetailsForPane(leaf.pane.channelId, leaf.pane.channelName, paneId);
-                        }}
-                        onClosePane={closePane}
-                        onResizeSplit={(path, ratio) => setPaneRoot(prev => prev === null ? prev : resizeSplit(prev, path, ratio))}
-                        renderContent={renderPaneContent}
-                    />
-                ) : activeChannelId !== null ? (
-                    <ChatView
-                        channelId={activeChannelId}
-                        channelName={activeDisplayName}
-                        isDm={activeChannelKind === "dm"}
-                        myRole={myRole}
-                        onOpenSettings={() => { setSettingsChannelId(activeChannelId); setSettingsOpen(true); }}
-                        onOpenDetails={() => openDetailsForPane(activeChannelId, activeDisplayName, null)}
-                        messages={activeMessages}
-                        usernames={usernames}
-                        currentUserId={userId}
-                        myUsername={myName}
-                        typingNames={activeTyping}
-                        connected={connected}
-                        hasMore={hasMore[activeChannelId] ?? false}
-                        loadingMore={loadingMore.has(activeChannelId)}
-                        reactions={activeReactions}
-                        pins={activePins}
-                        mentionUsers={mentionUsers}
-                        onSend={text => sendToChannel(activeChannelId, text)}
-                        onTyping={() => socketRef.current?.sendTyping(activeChannelId)}
-                        onLoadMore={() => loadMoreMessages(activeChannelId)}
-                        onReact={(msgId, emoji) => socketRef.current?.sendReaction(activeChannelId, msgId, emoji)}
-                        onEdit={(msgId, text) => socketRef.current?.sendEdit(activeChannelId, msgId, text)}
-                        onDelete={msgId => socketRef.current?.sendDelete(activeChannelId, msgId)}
-                        onPin={msgId => pinInChannel(activeChannelId, msgId)}
-                        onUnpin={msgId => unpinInChannel(activeChannelId, msgId)}
-                        onUserClick={(uid, _e) => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
-                    />
+                ) : chromeState !== "state1" ? (
+                    /* State 2/3 — the chrome pill/circle is reserved in-flow space next to
+                       the tiled content, Hyprland-status-bar style, instead of floating on
+                       top of it. See .dw-tiled-rail / .dw-tiled-body in darkwood.css. */
+                    <div className="dw-tiled-body">
+                        {!islandOpen && (
+                            <div className="dw-tiled-rail">
+                                <PaneChrome
+                                    mode={chromeState}
+                                    tabs={openTabs}
+                                    activeTabId={activeChannelId}
+                                    onSelectTab={(id, name, kind) => openOrFill(id, name, kind)}
+                                    onCloseTab={closeTab}
+                                    paneLeaves={paneRoot !== null ? getLeaves(paneRoot) : []}
+                                    focusedPaneId={focusedPaneId}
+                                    onFocusPane={setFocusedPaneId}
+                                    onPillHoverChange={setPillHovered}
+                                    totalUnread={totalUnread}
+                                    onLogoClick={() => { setPaletteOpen(v => !v); setPaletteQuery(""); setPaletteIdx(0); setPaletteMode("default"); }}
+                                    onToggleMultiPaneState={() => setLastMultiPaneState(toggleMultiPaneState)}
+                                />
+                                {/* Notifications still need to be reachable (via the Dynamic Island's
+                                    "notifications" action) even though the bell button itself is gone
+                                    in this state — anchor the panel to the rail instead of the viewport. */}
+                                {notifOpen && (
+                                    <div className="dw-notif-wrap-floating" ref={notifRef}>
+                                        <NotifPanel
+                                            channels={channels}
+                                            dms={dms}
+                                            unreads={unreadByChannel}
+                                            onNavigate={(id, name, kind) => openOrFill(id, name, kind)}
+                                            onClose={() => setNotifOpen(false)}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        <div className="dw-tiled-content">
+                            {paneContent}
+                        </div>
+                    </div>
                 ) : (
-                    <EmptyContent />
+                    paneContent
                 )}
             </main>
 
