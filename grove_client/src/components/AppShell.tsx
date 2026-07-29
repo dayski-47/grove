@@ -23,6 +23,7 @@ import { DecryptReveal } from "./motion/DecryptReveal";
 import {
     makeLeaf, makeEmptyPaneContent, countLeaves, getLeaves, findLeafById,
     splitAuto, splitDirectional, removePane, deriveChromeState, toggleMultiPaneState,
+    resizeSplit,
     MAX_PANES,
     type PaneTreeNode, type PaneContent, type SplitDirection,
 } from "../paneLayout";
@@ -1207,6 +1208,7 @@ export function AppShell({
                             openDetailsForPane(leaf.pane.channelId, leaf.pane.channelName, paneId);
                         }}
                         onClosePane={closePane}
+                        onResizeSplit={(path, ratio) => setPaneRoot(prev => prev === null ? prev : resizeSplit(prev, path, ratio))}
                         renderContent={renderPaneContent}
                     />
                 ) : activeChannelId !== null ? (

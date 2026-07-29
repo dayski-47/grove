@@ -1,4 +1,5 @@
-import { getLeaves, type PaneContent, type PaneTreeNode } from "../../paneLayout";
+import { useRef } from "react";
+import { getLeaves, type PaneContent, type PaneTreeNode, type SplitPath } from "../../paneLayout";
 
 // eslint-disable-next-line react-refresh/only-export-components -- shared color map, not a component; reused by PaneChrome.tsx
 export const KIND_ACCENT: Record<PaneContent["kind"], string> = {
@@ -17,22 +18,25 @@ export interface PaneGridProps {
     onHoverPane:   (paneId: string | null) => void;
     onOpenDetails: (paneId: string) => void;
     onClosePane:   (paneId: string) => void;
+    onResizeSplit: (path: SplitPath, ratio: number) => void;
     renderContent: (pane: PaneContent) => React.ReactNode;
 }
 
 type PaneNodeProps = {
     node:      PaneTreeNode;
+    path:      SplitPath;
     indexById: Map<string, number>;
 } & Omit<PaneGridProps, "root">;
 
 export function PaneGrid({
-    root, chromeState, focusedPaneId, pillHovered, onFocusPane, onHoverPane, onOpenDetails, onClosePane, renderContent,
+    root, chromeState, focusedPaneId, pillHovered, onFocusPane, onHoverPane, onOpenDetails, onClosePane, onResizeSplit, renderContent,
 }: PaneGridProps) {
     const indexById = new Map(getLeaves(root).map((leaf, i) => [leaf.pane.paneId, i + 1]));
     return (
         <div className={`pane-grid-root${chromeState === "state2" && pillHovered ? " pane-grid-dimmed" : ""}`}>
             <PaneNode
                 node={root}
+                path={[]}
                 indexById={indexById}
                 chromeState={chromeState}
                 focusedPaneId={focusedPaneId}
@@ -41,6 +45,7 @@ export function PaneGrid({
                 onHoverPane={onHoverPane}
                 onOpenDetails={onOpenDetails}
                 onClosePane={onClosePane}
+                onResizeSplit={onResizeSplit}
                 renderContent={renderContent}
             />
         </div>
@@ -48,16 +53,23 @@ export function PaneGrid({
 }
 
 function PaneNode({
-    node, indexById, chromeState, focusedPaneId, pillHovered, onFocusPane, onHoverPane, onOpenDetails, onClosePane, renderContent,
+    node, path, indexById, chromeState, focusedPaneId, pillHovered, onFocusPane, onHoverPane, onOpenDetails, onClosePane, onResizeSplit, renderContent,
 }: PaneNodeProps) {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+
     if (node.type === "split") {
         return (
-            <div className={`pane-split pane-split-${node.axis}`}>
+            <div className={`pane-split pane-split-${node.axis}`} ref={containerRef}>
                 <div className="pane-split-cell" style={{ flex: node.ratio }}>
-                    <PaneNode node={node.a} indexById={indexById} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} renderContent={renderContent} />
+                    <PaneNode node={node.a} path={[...path, "a"]} indexById={indexById} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} onResizeSplit={onResizeSplit} renderContent={renderContent} />
                 </div>
+                <SplitDivider
+                    axis={node.axis}
+                    containerRef={containerRef}
+                    onResize={ratio => onResizeSplit(path, ratio)}
+                />
                 <div className="pane-split-cell" style={{ flex: 1 - node.ratio }}>
-                    <PaneNode node={node.b} indexById={indexById} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} renderContent={renderContent} />
+                    <PaneNode node={node.b} path={[...path, "b"]} indexById={indexById} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} onResizeSplit={onResizeSplit} renderContent={renderContent} />
                 </div>
             </div>
         );
@@ -112,6 +124,44 @@ function PaneNode({
                     <span className="pane-leaf-reveal-label">{pane.channelName || "empty"}</span>
                 </div>
             )}
+        </div>
+    );
+}
+
+function SplitDivider({
+    axis, containerRef, onResize,
+}: {
+    axis: "row" | "column";
+    containerRef: React.RefObject<HTMLDivElement | null>;
+    onResize: (ratio: number) => void;
+}) {
+    function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+        e.preventDefault();
+        const containerEl = containerRef.current;
+        if (!containerEl) return;
+        // Re-bind to a non-nullable const: `container.current` narrowing above
+        // doesn't survive into the nested function declarations below.
+        const container: HTMLDivElement = containerEl;
+        e.currentTarget.setPointerCapture(e.pointerId);
+
+        function handleMove(moveEvent: PointerEvent) {
+            const rect = container.getBoundingClientRect();
+            const ratio = axis === "row"
+                ? (moveEvent.clientX - rect.left) / rect.width
+                : (moveEvent.clientY - rect.top) / rect.height;
+            onResize(ratio);
+        }
+        function handleUp() {
+            window.removeEventListener("pointermove", handleMove);
+            window.removeEventListener("pointerup", handleUp);
+        }
+        window.addEventListener("pointermove", handleMove);
+        window.addEventListener("pointerup", handleUp);
+    }
+
+    return (
+        <div className={`pane-split-handle pane-split-handle-${axis}`} onPointerDown={handlePointerDown}>
+            <div className="pane-split-handle-bar" />
         </div>
     );
 }

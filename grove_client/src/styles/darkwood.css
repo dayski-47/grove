@@ -2749,6 +2749,34 @@ input, textarea {
   min-height: 0;
 }
 
+.pane-split-handle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.pane-split-handle-row    { width: 8px; cursor: col-resize; }
+.pane-split-handle-column { height: 8px; cursor: row-resize; }
+
+.pane-split-handle-bar {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  transition: background var(--dur-fast), width var(--dur-fast), height var(--dur-fast);
+}
+
+.pane-split-handle-row .pane-split-handle-bar    { width: 1px; height: 60%; }
+.pane-split-handle-column .pane-split-handle-bar { height: 1px; width: 60%; }
+
+.pane-split-handle:hover .pane-split-handle-bar {
+  background: var(--leaf-bright);
+  box-shadow: 0 0 8px rgba(106, 184, 112, 0.6);
+}
+
+.pane-split-handle-row:hover .pane-split-handle-bar    { width: 3px; }
+.pane-split-handle-column:hover .pane-split-handle-bar { height: 3px; }
+
 .pane-split-row    { flex-direction: row; }
 .pane-split-column { flex-direction: column; }
 
