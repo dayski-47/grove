@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type IslandAction = "settings" | "channels" | "messages" | "users" | "notifications" | "activity" | "more";
 
@@ -30,11 +30,14 @@ export interface CommandIslandProps {
 
 export function CommandIsland({ open, onSelect, onClose }: CommandIslandProps) {
     const [focusIdx, setFocusIdx] = useState(0);
+    const prevOpenRef = useRef(open);
 
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (open) setFocusIdx(0);
-    }, [open]);
+    // eslint-disable-next-line react-hooks/refs
+    if (open && !prevOpenRef.current) {
+        setFocusIdx(0);
+    }
+    // eslint-disable-next-line react-hooks/refs
+    prevOpenRef.current = open;
 
     useEffect(() => {
         if (!open) return;
