@@ -1199,7 +1199,7 @@ export function AppShell({
                         "notifications" action) even though the bell button itself is gone
                         in this state — render the panel floating near the chrome shape. */}
                     {notifOpen && (
-                        <div className="dw-notif-wrap-floating">
+                        <div className="dw-notif-wrap-floating" ref={notifRef}>
                             <NotifPanel
                                 channels={channels}
                                 dms={dms}
