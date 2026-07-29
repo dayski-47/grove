@@ -1,6 +1,7 @@
 import { getLeaves, type PaneContent, type PaneTreeNode } from "../../paneLayout";
 
-const KIND_ACCENT: Record<PaneContent["kind"], string> = {
+// eslint-disable-next-line react-refresh/only-export-components -- shared color map, not a component; reused by PaneChrome.tsx
+export const KIND_ACCENT: Record<PaneContent["kind"], string> = {
     channel:      "var(--leaf-bright)",
     dm:           "#5a9bd8",
     notification: "#d8a545",

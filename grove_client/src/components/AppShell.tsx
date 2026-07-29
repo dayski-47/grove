@@ -1023,7 +1023,12 @@ export function AppShell({
         if (pane.channelId === null) {
             return (
                 <div className="pane-empty-content">
-                    <p>Press <kbd>Ctrl K</kbd> to fill this pane.</p>
+                    <svg className="pane-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+                        <rect x="4" y="4" width="16" height="16" rx="3" strokeDasharray="3 3" />
+                        <path d="M12 9v6M9 12h6" />
+                    </svg>
+                    <p className="pane-empty-label">Empty pane</p>
+                    <p className="pane-empty-kbd">Press <kbd>Ctrl K</kbd> to fill</p>
                 </div>
             );
         }

@@ -1,4 +1,5 @@
 import type { LeafNode } from "../../paneLayout";
+import { KIND_ACCENT } from "./PaneGrid";
 
 export interface PaneChromeProps {
     mode:          "state1" | "state2" | "state3";
@@ -63,6 +64,7 @@ export function PaneChrome({
                         <span
                             key={leaf.pane.paneId}
                             className={`pane-chrome-pill-num${leaf.pane.paneId === focusedPaneId ? " active" : ""}`}
+                            style={leaf.pane.paneId === focusedPaneId ? undefined : { color: KIND_ACCENT[leaf.pane.kind] }}
                             onMouseDown={e => { e.stopPropagation(); onFocusPane(leaf.pane.paneId); }}
                             onClick={e => e.stopPropagation()}
                         >
