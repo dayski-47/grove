@@ -151,6 +151,27 @@ export function removePane(root: PaneTreeNode, paneId: string): PaneTreeNode | n
     return rebalance({ type: "split", axis: root.axis, ratio: root.ratio, a, b });
 }
 
+export type SplitPath = ("a" | "b")[];
+
+const MIN_SPLIT_RATIO = 0.15;
+const MAX_SPLIT_RATIO = 0.85;
+
+export function resizeSplit(root: PaneTreeNode, path: SplitPath, ratio: number): PaneTreeNode {
+    if (path.length === 0) {
+        if (root.type !== "split") return root;
+        const clamped = Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, ratio));
+        return { ...root, ratio: clamped };
+    }
+    if (root.type === "leaf") return root;
+    const [head, ...rest] = path;
+    const child = head === "a" ? root.a : root.b;
+    const updated = resizeSplit(child, rest, ratio);
+    if (updated === child) return child;
+    return head === "a"
+        ? { ...root, a: updated }
+        : { ...root, b: updated };
+}
+
 export type ChromeState = "state1" | "state2" | "state3";
 export type MultiPaneChromeState = "state2" | "state3";
 

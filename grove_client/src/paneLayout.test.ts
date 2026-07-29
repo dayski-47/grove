@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
     makeLeaf, countLeaves, getLeaves, findLeafById, rebalance, splitAuto, splitDirectional, removePane,
-    countNonDetailsLeaves, deriveChromeState, toggleMultiPaneState,
+    countNonDetailsLeaves, deriveChromeState, toggleMultiPaneState, resizeSplit,
     type PaneContent, type PaneTreeNode, type SplitNode,
 } from "./paneLayout";
 
@@ -250,5 +250,44 @@ describe("toggleMultiPaneState", () => {
 
     it("toggles state3 to state2", () => {
         expect(toggleMultiPaneState("state3")).toBe("state2");
+    });
+});
+
+describe("resizeSplit", () => {
+    it("sets the ratio of the split node at the root path", () => {
+        const tree = split(makeLeaf(pane("p1")), makeLeaf(pane("p2")));
+        const result = resizeSplit(tree, [], 0.7) as SplitNode;
+        expect(result.ratio).toBe(0.7);
+    });
+
+    it("navigates nested splits via the path", () => {
+        const tree = split(makeLeaf(pane("p1")), split(makeLeaf(pane("p2")), makeLeaf(pane("p3"))));
+        const result = resizeSplit(tree, ["b"], 0.3) as SplitNode;
+        expect((result.b as SplitNode).ratio).toBe(0.3);
+        expect(result.ratio).toBe(0.5); // the root split's own ratio is untouched
+    });
+
+    it("clamps below the minimum ratio", () => {
+        const tree = split(makeLeaf(pane("p1")), makeLeaf(pane("p2")));
+        const result = resizeSplit(tree, [], 0.02) as SplitNode;
+        expect(result.ratio).toBe(0.15);
+    });
+
+    it("clamps above the maximum ratio", () => {
+        const tree = split(makeLeaf(pane("p1")), makeLeaf(pane("p2")));
+        const result = resizeSplit(tree, [], 0.99) as SplitNode;
+        expect(result.ratio).toBe(0.85);
+    });
+
+    it("returns the same reference when the path points at a leaf, not a split", () => {
+        const tree = split(makeLeaf(pane("p1")), makeLeaf(pane("p2")));
+        const result = resizeSplit(tree, ["a"], 0.7);
+        expect(result).toBe(tree.a);
+    });
+
+    it("only rebuilds nodes along the path, leaving the other branch untouched by reference", () => {
+        const tree = split(makeLeaf(pane("p1")), split(makeLeaf(pane("p2")), makeLeaf(pane("p3"))));
+        const result = resizeSplit(tree, ["b"], 0.3) as SplitNode;
+        expect(result.a).toBe(tree.a);
     });
 });
