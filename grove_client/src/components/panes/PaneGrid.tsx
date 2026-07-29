@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { getLeaves, type PaneContent, type PaneTreeNode, type SplitPath } from "../../paneLayout";
 
 // eslint-disable-next-line react-refresh/only-export-components -- shared color map, not a component; reused by PaneChrome.tsx
@@ -8,6 +9,13 @@ export const KIND_ACCENT: Record<PaneContent["kind"], string> = {
     notification: "#d8a545",
     details:      "#a56ad8",
 };
+
+// A nested split doesn't have its own stable id, but its leftmost leaf's
+// paneId is stable and unique — use it to key subtrees across renders so
+// AnimatePresence can tell which branch is "staying" vs "new" on a split.
+function firstLeafId(node: PaneTreeNode): string {
+    return node.type === "leaf" ? node.pane.paneId : firstLeafId(node.a);
+}
 
 export interface PaneGridProps {
     root:          PaneTreeNode;
@@ -60,17 +68,36 @@ function PaneNode({
     if (node.type === "split") {
         return (
             <div className={`pane-split pane-split-${node.axis}`} ref={containerRef}>
-                <div className="pane-split-cell" style={{ flex: node.ratio }}>
-                    <PaneNode node={node.a} path={[...path, "a"]} indexById={indexById} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} onResizeSplit={onResizeSplit} renderContent={renderContent} />
-                </div>
-                <SplitDivider
-                    axis={node.axis}
-                    containerRef={containerRef}
-                    onResize={ratio => onResizeSplit(path, ratio)}
-                />
-                <div className="pane-split-cell" style={{ flex: 1 - node.ratio }}>
-                    <PaneNode node={node.b} path={[...path, "b"]} indexById={indexById} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} onResizeSplit={onResizeSplit} renderContent={renderContent} />
-                </div>
+                <AnimatePresence initial={false}>
+                    <motion.div
+                        key={firstLeafId(node.a)}
+                        className="pane-split-cell"
+                        layout
+                        initial={{ opacity: 0, scale: 0.94 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                        style={{ flex: node.ratio }}
+                    >
+                        <PaneNode node={node.a} path={[...path, "a"]} indexById={indexById} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} onResizeSplit={onResizeSplit} renderContent={renderContent} />
+                    </motion.div>
+                    <SplitDivider
+                        key="divider"
+                        axis={node.axis}
+                        containerRef={containerRef}
+                        onResize={ratio => onResizeSplit(path, ratio)}
+                    />
+                    <motion.div
+                        key={firstLeafId(node.b)}
+                        className="pane-split-cell"
+                        layout
+                        initial={{ opacity: 0, scale: 0.94 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                        style={{ flex: 1 - node.ratio }}
+                    >
+                        <PaneNode node={node.b} path={[...path, "b"]} indexById={indexById} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} onResizeSplit={onResizeSplit} renderContent={renderContent} />
+                    </motion.div>
+                </AnimatePresence>
             </div>
         );
     }
@@ -85,7 +112,9 @@ function PaneNode({
     const ownsHeader = pane.kind === "details" || pane.kind === "notification" || pane.channelId === null;
 
     return (
-        <div
+        <motion.div
+            layout
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
             className={`pane-leaf${isFocused ? " focused" : ""}`}
             onMouseEnter={() => onHoverPane(pane.paneId)}
             onMouseLeave={() => onHoverPane(null)}
@@ -124,7 +153,7 @@ function PaneNode({
                     <span className="pane-leaf-reveal-label">{pane.channelName || "empty"}</span>
                 </div>
             )}
-        </div>
+        </motion.div>
     );
 }
 
