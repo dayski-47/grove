@@ -3188,7 +3188,6 @@ input, textarea {
   transform: scale(1.05);
 }
 
-.dw-chat-settings-btn,
 .dw-chat-details-btn {
   color: var(--text-muted);
   cursor: pointer;
