@@ -14,6 +14,7 @@ interface ChatViewProps {
     isDm:           boolean;
     myRole:         ChannelRole;
     onOpenSettings?: () => void;
+    onOpenDetails?:  () => void;
     messages:     DisplayMessage[];
     usernames:    Record<number, string>;
     currentUserId: number;
@@ -37,7 +38,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({
-    channelId, channelName, isDm, myRole, onOpenSettings,
+    channelId, channelName, isDm, myRole, onOpenSettings, onOpenDetails,
     messages, usernames, currentUserId, myUsername,
     typingNames, connected,
     hasMore, loadingMore,
@@ -96,6 +97,16 @@ export function ChatView({
                         aria-label="Channel settings"
                     >
                         ⚙
+                    </button>
+                )}
+                {onOpenDetails && (
+                    <button
+                        className="dw-chat-details-btn"
+                        onClick={onOpenDetails}
+                        aria-label="Open details"
+                        title="Details"
+                    >
+                        ⓘ
                     </button>
                 )}
             </header>

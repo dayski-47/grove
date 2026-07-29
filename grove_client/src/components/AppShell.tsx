@@ -20,6 +20,17 @@ import { useWebRTC } from "../useWebRTC";
 import { packMessage } from "../protocol";
 import type { ActivityStatus } from "./ProfileMenu";
 import { DecryptReveal } from "./motion/DecryptReveal";
+import {
+    makeLeaf, makeEmptyPaneContent, countLeaves, getLeaves, findLeafById,
+    splitAuto, splitDirectional, removePane, deriveChromeState, toggleMultiPaneState,
+    MAX_PANES,
+    type PaneTreeNode, type PaneContent, type SplitDirection,
+} from "../paneLayout";
+import { usePaneKeybinds } from "../hooks/usePaneKeybinds";
+import { PaneChrome } from "./panes/PaneChrome";
+import { PaneGrid } from "./panes/PaneGrid";
+import { CommandIsland, type IslandAction } from "./panes/CommandIsland";
+import { DetailsPane } from "./panes/DetailsPane";
 
 /* ── Types ───────────────────────────────────────────────── */
 
@@ -91,6 +102,15 @@ export function AppShell({
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [myChannelRoles, setMyChannelRoles] = useState<Record<number, ChannelRole>>({});
 
+    /* Pane tiling */
+    const [paneRoot, setPaneRoot]                     = useState<PaneTreeNode | null>(null);
+    const [focusedPaneId, setFocusedPaneId]           = useState<string | null>(null);
+    const [hoveredPaneId, setHoveredPaneId]           = useState<string | null>(null);
+    const [lastMultiPaneState, setLastMultiPaneState] = useState<"state2" | "state3">("state2");
+    const [islandOpen, setIslandOpen]                 = useState(false);
+    const [settingsChannelId, setSettingsChannelId]   = useState<number | null>(null);
+    const [pillHovered, setPillHovered]               = useState(false);
+
     /* Data */
     const [channels, setChannels]       = useState<Channel[]>([]);
     const [dms, setDms]                 = useState<DmInfo[]>([]);
@@ -135,6 +155,8 @@ export function AppShell({
     const tabsForKeys   = useRef<{ id: number; name: string; kind: "channel" | "dm" }[]>([]);
     const activeForKeys = useRef<number | null>(null);
     const paletteModeRef = useRef<"default" | "browse" | "join-code" | "create-options">("default");
+    const paneRootRef     = useRef<PaneTreeNode | null>(null);
+    const visibleChannelIdsRef = useRef<number[]>([]);
     /* Latest-value refs for WS handler */
     const channelsRef   = useRef<Channel[]>([]);
     const dmsRef        = useRef<DmInfo[]>([]);
@@ -223,6 +245,7 @@ export function AppShell({
 
     useEffect(() => {
         function onTabKey(e: KeyboardEvent) {
+            if (paneRootRef.current !== null) return; // pane mode active — usePaneKeybinds owns these keys instead
             const tabs  = tabsForKeys.current;
             const actId = activeForKeys.current;
 
@@ -279,6 +302,96 @@ export function AppShell({
         window.addEventListener("keydown", onTabKey);
         return () => window.removeEventListener("keydown", onTabKey);
     }, []); // safe — reads only refs; all setters are stable
+
+    /* ── Pane-tiling keyboard shortcuts ──────────────────── */
+
+    usePaneKeybinds({
+        isPaneModeActive: () => paneRootRef.current !== null,
+        getFocusedPaneId: () => focusedPaneId,
+        getHoveredPaneId: () => hoveredPaneId,
+        onCreateSplit: () => {
+            // paneRoot/focusedPaneId/activeChannelId below are always the
+            // current render's values — usePaneKeybinds refreshes its actions
+            // ref every render (Task 8), so this closure is never stale.
+            if (paneRoot === null) {
+                if (activeChannelId === null) return; // nothing to split from yet
+                const newPaneId = crypto.randomUUID();
+                const firstLeaf = makeLeaf({
+                    paneId: crypto.randomUUID(),
+                    kind: activeChannelKind,
+                    channelId: activeChannelId,
+                    channelName: activeDisplayName,
+                });
+                setPaneRoot(splitAuto(firstLeaf, firstLeaf.pane.paneId, makeEmptyPaneContent(newPaneId)));
+                setFocusedPaneId(newPaneId);
+                return;
+            }
+            if (focusedPaneId === null || countLeaves(paneRoot) >= MAX_PANES) return;
+            const newPaneId = crypto.randomUUID();
+            setPaneRoot(splitAuto(paneRoot, focusedPaneId, makeEmptyPaneContent(newPaneId)));
+            setFocusedPaneId(newPaneId);
+        },
+        onDirectionalSplit: (direction: SplitDirection) => {
+            if (paneRoot === null) {
+                if (activeChannelId === null) return;
+                const newPaneId = crypto.randomUUID();
+                const firstLeaf = makeLeaf({
+                    paneId: crypto.randomUUID(),
+                    kind: activeChannelKind,
+                    channelId: activeChannelId,
+                    channelName: activeDisplayName,
+                });
+                setPaneRoot(splitDirectional(firstLeaf, firstLeaf.pane.paneId, makeEmptyPaneContent(newPaneId), direction));
+                setFocusedPaneId(newPaneId);
+                return;
+            }
+            const targetId = hoveredPaneId ?? focusedPaneId;
+            if (targetId === null || countLeaves(paneRoot) >= MAX_PANES) return;
+            const newPaneId = crypto.randomUUID();
+            setPaneRoot(splitDirectional(paneRoot, targetId, makeEmptyPaneContent(newPaneId), direction));
+            setFocusedPaneId(newPaneId);
+        },
+        onCollapseChrome: () => setLastMultiPaneState(prev => prev === "state2" ? "state3" : prev),
+        onExpandChrome:   () => setLastMultiPaneState(prev => prev === "state3" ? "state2" : prev),
+        onToggleIsland:   () => setIslandOpen(v => !v),
+        onClosePane: (paneId: string) => {
+            if (paneRoot === null) return;
+            const result = removePane(paneRoot, paneId);
+            if (result === null || result.type === "leaf") {
+                const survivor = result?.type === "leaf" ? result.pane : null;
+                setPaneRoot(null);
+                if (survivor && survivor.channelId !== null) {
+                    const channelId = survivor.channelId;
+                    const kind = survivor.kind === "dm" ? "dm" : "channel";
+                    setActiveCh(channelId);
+                    setActiveName(survivor.channelName);
+                    setActiveKind(kind);
+                    // Restore this channel to the State 1 tab list — it may have
+                    // been filled into a pane mid-tiling without ever going
+                    // through openChannel/setOpenTabs.
+                    setOpenTabs(prev => prev.find(t => t.id === channelId)
+                        ? prev
+                        : [...prev, { id: channelId, name: survivor.channelName, kind }]);
+                } else {
+                    setActiveCh(null);
+                    setActiveName("");
+                }
+                setFocusedPaneId(null);
+                return;
+            }
+            setPaneRoot(result);
+            const remaining = getLeaves(result);
+            if (!remaining.some(l => l.pane.paneId === focusedPaneId)) {
+                setFocusedPaneId(remaining[0]?.pane.paneId ?? null);
+            }
+        },
+        onSwitchToPaneIndex: (index: number) => {
+            if (paneRoot === null) return;
+            const leaves = getLeaves(paneRoot);
+            const target = leaves[index];
+            if (target) setFocusedPaneId(target.pane.paneId);
+        },
+    });
 
     /* ── Typing expiry ──────────────────────────────────── */
 
@@ -388,7 +501,7 @@ export function AppShell({
                         return { ...prev, [msg.channelId]: [...arr, incoming] };
                     });
                     resolveUsername(msg.userId);
-                    const isBackground = activeForKeys.current !== msg.channelId;
+                    const isBackground = !visibleChannelIdsRef.current.includes(msg.channelId);
                     if (isBackground) {
                         setUnread(u => ({ ...u, [msg.channelId]: (u[msg.channelId] ?? 0) + 1 }));
                         if (msg.userId !== userId) {
@@ -463,20 +576,10 @@ export function AppShell({
 
     /* ── Channel open ───────────────────────────────────── */
 
-    async function openChannel(channelId: number, displayName: string, kind: "channel" | "dm" = "channel") {
-        dismissChannelToasts(channelId);
-        setActiveCh(channelId);
-        setActiveKind(kind);
-        setActiveName(displayName);
-        setActivePage("chat");
-        setUnread(prev => { const n = { ...prev }; delete n[channelId]; return n; });
-        setRecentIds(prev => [channelId, ...prev.filter(id => id !== channelId)].slice(0, 10));
-        setOpenTabs(prev => prev.find(t => t.id === channelId) ? prev : [...prev, { id: channelId, name: displayName, kind }]);
-        setPaletteOpen(false);
-
+    async function ensureChannelLoaded(channelId: number, kind: "channel" | "dm") {
         // Populate the caller's role for this channel lazily, the first time it's
         // opened — needed so Delete's moderator gating works even before the
-        // settings modal has ever been opened (Task 20 only fetched roles there).
+        // settings modal has ever been opened.
         if (kind === "channel" && !(channelId in myChannelRoles)) {
             getChannelMembers(channelId, token)
                 .then(members => {
@@ -519,12 +622,55 @@ export function AppShell({
         } catch { /* already member */ }
     }
 
+    function markRecentAndClearUnread(channelId: number) {
+        dismissChannelToasts(channelId);
+        setUnread(prev => { const n = { ...prev }; delete n[channelId]; return n; });
+        setRecentIds(prev => [channelId, ...prev.filter(id => id !== channelId)].slice(0, 10));
+    }
+
+    async function openChannel(channelId: number, displayName: string, kind: "channel" | "dm" = "channel") {
+        markRecentAndClearUnread(channelId);
+        setActiveCh(channelId);
+        setActiveKind(kind);
+        setActiveName(displayName);
+        setActivePage("chat");
+        setOpenTabs(prev => prev.find(t => t.id === channelId) ? prev : [...prev, { id: channelId, name: displayName, kind }]);
+        setPaletteOpen(false);
+        await ensureChannelLoaded(channelId, kind);
+    }
+
+    async function fillFocusedPane(channelId: number, displayName: string, kind: "channel" | "dm") {
+        markRecentAndClearUnread(channelId);
+        setPaletteOpen(false);
+        if (focusedPaneId !== null) {
+            setPaneRoot(prev => prev === null ? prev : replacePaneContent(prev, focusedPaneId, {
+                paneId: focusedPaneId, kind, channelId, channelName: displayName,
+            }));
+        }
+        await ensureChannelLoaded(channelId, kind);
+    }
+
+    /** Routes "navigate to this conversation" to the right place depending on
+        whether pane mode is active — State 1 keeps today's single-active-channel
+        behavior; pane mode fills whichever pane currently has focus. */
+    function openOrFill(channelId: number, displayName: string, kind: "channel" | "dm") {
+        if (paneRoot === null) openChannel(channelId, displayName, kind);
+        else fillFocusedPane(channelId, displayName, kind);
+    }
+
+    function replacePaneContent(root: PaneTreeNode, paneId: string, content: PaneContent): PaneTreeNode {
+        if (root.type === "leaf") {
+            return root.pane.paneId === paneId ? makeLeaf(content) : root;
+        }
+        return { ...root, a: replacePaneContent(root.a, paneId, content), b: replacePaneContent(root.b, paneId, content) };
+    }
+
     function closeTab(tabId: number) {
         if (activeChannelId === tabId) {
             const idx       = openTabs.findIndex(t => t.id === tabId);
             const remaining = openTabs.filter(t => t.id !== tabId);
             const adj       = remaining[idx] ?? remaining[idx - 1] ?? null;
-            if (adj) openChannel(adj.id, adj.name, adj.kind);
+            if (adj) openOrFill(adj.id, adj.name, adj.kind);
             else { setActiveCh(null); setActiveName(""); }
         }
         setOpenTabs(prev => prev.filter(t => t.id !== tabId));
@@ -566,12 +712,12 @@ export function AppShell({
 
     async function openDmWith(partnerId: number) {
         const existing = dms.find(d => d.partner_id === partnerId);
-        if (existing) { openChannel(existing.channel_id, existing.partner_name, "dm"); return; }
+        if (existing) { openOrFill(existing.channel_id, existing.partner_name, "dm"); return; }
         try {
             const { channel_id } = await openDm(partnerId, token);
             const name = usernames[partnerId] ?? `user ${partnerId}`;
             setDms(prev => [{ channel_id, partner_id: partnerId, partner_name: name }, ...prev]);
-            openChannel(channel_id, name, "dm");
+            openOrFill(channel_id, name, "dm");
         } catch { /* ignore */ }
     }
 
@@ -605,7 +751,7 @@ export function AppShell({
             setCreateCategory("");
             setCreatePrivate(false);
             setPaletteMode("default");
-            openChannel(res.channel_id, name, "channel");
+            openOrFill(res.channel_id, name, "channel");
         } catch { /* ignore */ }
     }
 
@@ -619,7 +765,7 @@ export function AppShell({
                 : [...prev, { id: res.channel_id, name: res.name, is_private: true }]);
             setJoinCodeDraft("");
             setPaletteMode("default");
-            openChannel(res.channel_id, res.name, "channel");
+            openOrFill(res.channel_id, res.name, "channel");
         } catch {
             setToasts(prev => [...prev, {
                 id:          crypto.randomUUID(),
@@ -728,12 +874,12 @@ export function AppShell({
 
     function selectPaletteItem(item: PaletteItem) {
         if (item.kind === "channel") {
-            openChannel(item.id, item.name, "channel");
+            openOrFill(item.id, item.name, "channel");
         } else if (item.kind === "dm") {
             if (item.id < 0) {
                 openDmWith(item.partnerId);
             } else {
-                openChannel(item.id, item.name, "dm");
+                openOrFill(item.id, item.name, "dm");
             }
         } else if (item.kind === "action") {
             if (item.id === "friends") { setActivePage("friends"); setPaletteOpen(false); }
@@ -770,6 +916,135 @@ export function AppShell({
     dmsRef.current        = dms;
     usernamesRef.current  = usernames;
     paletteModeRef.current = paletteMode;
+    paneRootRef.current    = paneRoot;
+    visibleChannelIdsRef.current = paneRoot === null
+        ? (activeChannelId !== null ? [activeChannelId] : [])
+        : getLeaves(paneRoot).map(l => l.pane.channelId).filter((id): id is number => id !== null);
+
+    /* ── Command island actions ─────────────────────────── */
+
+    function handleIslandAction(action: IslandAction) {
+        setIslandOpen(false);
+        if (action === "channels") {
+            setPaletteOpen(true); setPaletteMode("browse"); setPaletteQuery(""); setPaletteIdx(0);
+        } else if (action === "messages") {
+            setPaletteOpen(true); setPaletteMode("default"); setPaletteQuery(""); setPaletteIdx(0);
+        } else if (action === "users") {
+            setActivePage("friends");
+        } else if (action === "notifications") {
+            setNotifOpen(true);
+        } else if (action === "settings") {
+            const focusedChannelId = focusedPaneId !== null
+                ? (findLeafById(paneRoot, focusedPaneId)?.pane.channelId ?? null)
+                : activeChannelId;
+            if (focusedChannelId !== null) {
+                setSettingsChannelId(focusedChannelId);
+                setSettingsOpen(true);
+            }
+        }
+        // "activity" and "more" are reserved for future icons — no action yet.
+    }
+
+    /** Opens (or reuses) a Details pane for `channelId`, tiled beside
+        `sourcePaneId` — or, if pane mode isn't active yet, beside a
+        synthesized first leaf built from the current State-1 conversation.
+        Per spec, this never changes chromeState on its own — deriveChromeState
+        already guarantees that by ignoring "details" leaves. */
+    function openDetailsForPane(channelId: number, channelName: string, sourcePaneId: string | null) {
+        if (countLeaves(paneRoot) >= MAX_PANES) return;
+        const detailsContent: PaneContent = {
+            paneId: crypto.randomUUID(), kind: "details", channelId,
+            channelName: `${channelName} details`,
+        };
+        if (paneRoot === null) {
+            const firstLeaf = makeLeaf({
+                paneId: sourcePaneId ?? crypto.randomUUID(),
+                kind: activeChannelKind, channelId, channelName,
+            });
+            setPaneRoot(splitDirectional(firstLeaf, firstLeaf.pane.paneId, detailsContent, "right"));
+            return;
+        }
+        if (sourcePaneId === null) return;
+        setPaneRoot(prev => prev === null ? prev : splitDirectional(prev, sourcePaneId, detailsContent, "right"));
+    }
+
+    /* ── Per-pane content dispatch ───────────────────────── */
+
+    function sendToChannel(channelId: number, text: string) {
+        const now = Math.floor(Date.now() / 1000);
+        const clientId = crypto.randomUUID();
+        setMessages(prev => ({
+            ...prev,
+            [channelId]: [...(prev[channelId] ?? []), { userId, text, timestamp: now, pending: true, clientId }],
+        }));
+        socketRef.current?.sendText(channelId, text);
+    }
+
+    async function pinInChannel(channelId: number, msgId: number) {
+        await pinMessage(msgId, token).catch(() => {});
+        const list = await getChannelPins(channelId, token).catch(() => [] as PinnedMessage[]);
+        setPins(prev => ({ ...prev, [channelId]: list }));
+    }
+
+    async function unpinInChannel(channelId: number, msgId: number) {
+        await unpinMessage(msgId, token).catch(() => {});
+        setPins(prev => ({ ...prev, [channelId]: (prev[channelId] ?? []).filter(p => p.message_id !== msgId) }));
+    }
+
+    function renderPaneContent(pane: PaneContent) {
+        if (pane.kind === "notification") {
+            return (
+                <NotifPanel
+                    channels={channels}
+                    dms={dms}
+                    unreads={unreadByChannel}
+                    onNavigate={(id, name, kind) => openOrFill(id, name, kind)}
+                    onClose={() => {}}
+                />
+            );
+        }
+        if (pane.kind === "details") {
+            return <DetailsPane channelId={pane.channelId} messages={pane.channelId !== null ? (messages[pane.channelId] ?? []) : []} />;
+        }
+        if (pane.channelId === null) {
+            return (
+                <div className="pane-empty-content">
+                    <p>Press <kbd>Ctrl K</kbd> to fill this pane.</p>
+                </div>
+            );
+        }
+        const channelId = pane.channelId;
+        const role: ChannelRole = myChannelRoles[channelId] ?? "member";
+        return (
+            <ChatView
+                channelId={channelId}
+                channelName={pane.channelName}
+                isDm={pane.kind === "dm"}
+                myRole={role}
+                onOpenSettings={pane.kind === "channel" ? () => { setSettingsChannelId(channelId); setSettingsOpen(true); } : undefined}
+                messages={messages[channelId] ?? []}
+                usernames={usernames}
+                currentUserId={userId}
+                myUsername={myName}
+                typingNames={[...(typingUsers[channelId] ?? new Map()).keys()].map(uid => usernames[uid] ?? `user ${uid}`)}
+                connected={connected}
+                hasMore={hasMore[channelId] ?? false}
+                loadingMore={loadingMore.has(channelId)}
+                reactions={reactions[channelId] ?? {}}
+                pins={pins[channelId] ?? []}
+                mentionUsers={mentionUsers}
+                onSend={text => sendToChannel(channelId, text)}
+                onTyping={() => socketRef.current?.sendTyping(channelId)}
+                onLoadMore={() => loadMoreMessages(channelId)}
+                onReact={(msgId, emoji) => socketRef.current?.sendReaction(channelId, msgId, emoji)}
+                onEdit={(msgId, text) => socketRef.current?.sendEdit(channelId, msgId, text)}
+                onDelete={msgId => socketRef.current?.sendDelete(channelId, msgId)}
+                onPin={msgId => pinInChannel(channelId, msgId)}
+                onUnpin={msgId => unpinInChannel(channelId, msgId)}
+                onUserClick={uid => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
+            />
+        );
+    }
 
     /* ── Derived values ─────────────────────────────────── */
 
