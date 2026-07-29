@@ -2639,8 +2639,10 @@ input, textarea {
   display: flex;
   flex-direction: row;
   background:
-    radial-gradient(circle at 22% 15%, rgba(106, 184, 112, 0.28), transparent 55%),
-    radial-gradient(circle at 85% 85%, rgba(90, 155, 216, 0.16), transparent 50%);
+    radial-gradient(circle at 20% 10%, rgba(106, 184, 112, 0.55), transparent 50%),
+    radial-gradient(circle at 90% 90%, rgba(90, 155, 216, 0.32), transparent 55%),
+    radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0, 0, 0, 0.55) 100%),
+    var(--void);
 }
 
 .dw-tiled-rail {
