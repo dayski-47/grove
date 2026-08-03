@@ -282,7 +282,7 @@ describe("resizeSplit", () => {
     it("returns the same reference when the path points at a leaf, not a split", () => {
         const tree = split(makeLeaf(pane("p1")), makeLeaf(pane("p2")));
         const result = resizeSplit(tree, ["a"], 0.7);
-        expect(result).toBe(tree.a);
+        expect(result).toBe(tree);
     });
 
     it("only rebuilds nodes along the path, leaving the other branch untouched by reference", () => {

@@ -166,7 +166,7 @@ export function resizeSplit(root: PaneTreeNode, path: SplitPath, ratio: number):
     const [head, ...rest] = path;
     const child = head === "a" ? root.a : root.b;
     const updated = resizeSplit(child, rest, ratio);
-    if (updated === child) return child;
+    if (updated === child) return root;
     return head === "a"
         ? { ...root, a: updated }
         : { ...root, b: updated };
