@@ -2,6 +2,17 @@ import { useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { getLeaves, type PaneContent, type PaneTreeNode, type SplitPath } from "../../paneLayout";
 
+/** A split-cell whose direct child is a leaf that already existed last
+    render should skip its own enter fade — that leaf's `motion.div` carries
+    a shared `layoutId` (see PaneNode's leaf branch) and drives the "real"
+    animation via a FLIP from its old position/size to its new one. Layering
+    the cell's opacity/scale entrance on top of that would hide the FLIP
+    behind a fade instead of letting the shrink read as continuous motion.
+    Nested (non-leaf) children and genuinely new leaves keep the entrance. */
+function cellSkipsEntrance(child: PaneTreeNode, freshPaneIds: ReadonlySet<string>): boolean {
+    return child.type === "leaf" && !freshPaneIds.has(child.pane.paneId);
+}
+
 // eslint-disable-next-line react-refresh/only-export-components -- shared color map, not a component; reused by PaneChrome.tsx
 export const KIND_ACCENT: Record<PaneContent["kind"], string> = {
     channel:      "var(--leaf-bright)",
@@ -31,15 +42,27 @@ export interface PaneGridProps {
 }
 
 type PaneNodeProps = {
-    node:      PaneTreeNode;
-    path:      SplitPath;
-    indexById: Map<string, number>;
+    node:          PaneTreeNode;
+    path:          SplitPath;
+    indexById:     Map<string, number>;
+    freshPaneIds:  ReadonlySet<string>;
 } & Omit<PaneGridProps, "root">;
 
 export function PaneGrid({
     root, chromeState, focusedPaneId, pillHovered, onFocusPane, onHoverPane, onOpenDetails, onClosePane, onResizeSplit, renderContent,
 }: PaneGridProps) {
     const indexById = new Map(getLeaves(root).map((leaf, i) => [leaf.pane.paneId, i + 1]));
+
+    // Diff this render's leaves against last render's to find paneIds that
+    // are genuinely new (vs. a persisting leaf that just got wrapped in a
+    // new split-cell one level deeper) — see cellSkipsEntrance above.
+    const prevPaneIdsRef = useRef<ReadonlySet<string>>(new Set());
+    const knownPaneIds = new Set(getLeaves(root).map(leaf => leaf.pane.paneId));
+    // eslint-disable-next-line react-hooks/refs -- bookkeeping ref read in-render (same pattern as CommandIsland's prevOpenRef) to diff this render's leaves against last render's.
+    const freshPaneIds = new Set([...knownPaneIds].filter(id => !prevPaneIdsRef.current.has(id)));
+    // eslint-disable-next-line react-hooks/refs -- bookkeeping ref write in-render, mirrors CommandIsland's prevOpenRef.current = open pattern.
+    prevPaneIdsRef.current = knownPaneIds;
+
     return (
         <div className={`pane-grid-root${chromeState === "state2" && pillHovered ? " pane-grid-dimmed" : ""}`}>
             <AnimatePresence initial={false}>
@@ -55,6 +78,7 @@ export function PaneGrid({
                         node={root}
                         path={[]}
                         indexById={indexById}
+                        freshPaneIds={freshPaneIds}
                         chromeState={chromeState}
                         focusedPaneId={focusedPaneId}
                         pillHovered={pillHovered}
@@ -72,11 +96,13 @@ export function PaneGrid({
 }
 
 function PaneNode({
-    node, path, indexById, chromeState, focusedPaneId, pillHovered, onFocusPane, onHoverPane, onOpenDetails, onClosePane, onResizeSplit, renderContent,
+    node, path, indexById, freshPaneIds, chromeState, focusedPaneId, pillHovered, onFocusPane, onHoverPane, onOpenDetails, onClosePane, onResizeSplit, renderContent,
 }: PaneNodeProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
 
     if (node.type === "split") {
+        const aSkipsEntrance = cellSkipsEntrance(node.a, freshPaneIds);
+        const bSkipsEntrance = cellSkipsEntrance(node.b, freshPaneIds);
         return (
             <div className={`pane-split pane-split-${node.axis}`} ref={containerRef}>
                 <AnimatePresence initial={false}>
@@ -84,12 +110,12 @@ function PaneNode({
                         key={firstLeafId(node.a)}
                         className="pane-split-cell"
                         layout
-                        initial={{ opacity: 0, scale: 0.94 }}
+                        initial={aSkipsEntrance ? false : { opacity: 0, scale: 0.94 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                         style={{ flex: node.ratio }}
                     >
-                        <PaneNode node={node.a} path={[...path, "a"]} indexById={indexById} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} onResizeSplit={onResizeSplit} renderContent={renderContent} />
+                        <PaneNode node={node.a} path={[...path, "a"]} indexById={indexById} freshPaneIds={freshPaneIds} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} onResizeSplit={onResizeSplit} renderContent={renderContent} />
                     </motion.div>
                     <SplitDivider
                         key="divider"
@@ -101,12 +127,12 @@ function PaneNode({
                         key={firstLeafId(node.b)}
                         className="pane-split-cell"
                         layout
-                        initial={{ opacity: 0, scale: 0.94 }}
+                        initial={bSkipsEntrance ? false : { opacity: 0, scale: 0.94 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                         style={{ flex: 1 - node.ratio }}
                     >
-                        <PaneNode node={node.b} path={[...path, "b"]} indexById={indexById} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} onResizeSplit={onResizeSplit} renderContent={renderContent} />
+                        <PaneNode node={node.b} path={[...path, "b"]} indexById={indexById} freshPaneIds={freshPaneIds} chromeState={chromeState} focusedPaneId={focusedPaneId} pillHovered={pillHovered} onFocusPane={onFocusPane} onHoverPane={onHoverPane} onOpenDetails={onOpenDetails} onClosePane={onClosePane} onResizeSplit={onResizeSplit} renderContent={renderContent} />
                     </motion.div>
                 </AnimatePresence>
             </div>
@@ -125,6 +151,7 @@ function PaneNode({
     return (
         <motion.div
             layout
+            layoutId={pane.paneId}
             transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
             className={`pane-leaf${isFocused ? " focused" : ""}`}
             onMouseEnter={() => onHoverPane(pane.paneId)}
