@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { GroveSocket } from "../socket";
 import {
     getHistory, joinChannel, createChannel, listChannels,
@@ -318,7 +319,7 @@ export function AppShell({
                 if (activeChannelId === null) return; // nothing to split from yet
                 const newPaneId = crypto.randomUUID();
                 const firstLeaf = makeLeaf({
-                    paneId: crypto.randomUUID(),
+                    paneId: `solo-${activeChannelId}`,
                     kind: activeChannelKind,
                     channelId: activeChannelId,
                     channelName: activeDisplayName,
@@ -337,7 +338,7 @@ export function AppShell({
                 if (activeChannelId === null) return;
                 const newPaneId = crypto.randomUUID();
                 const firstLeaf = makeLeaf({
-                    paneId: crypto.randomUUID(),
+                    paneId: `solo-${activeChannelId}`,
                     kind: activeChannelKind,
                     channelId: activeChannelId,
                     channelName: activeDisplayName,
@@ -1115,34 +1116,41 @@ export function AppShell({
             renderContent={renderPaneContent}
         />
     ) : activeChannelId !== null ? (
-        <ChatView
-            channelId={activeChannelId}
-            channelName={activeDisplayName}
-            isDm={activeChannelKind === "dm"}
-            myRole={myRole}
-            onOpenSettings={() => { setSettingsChannelId(activeChannelId); setSettingsOpen(true); }}
-            onOpenDetails={() => openDetailsForPane(activeChannelId, activeDisplayName, null)}
-            messages={activeMessages}
-            usernames={usernames}
-            currentUserId={userId}
-            myUsername={myName}
-            typingNames={activeTyping}
-            connected={connected}
-            hasMore={hasMore[activeChannelId] ?? false}
-            loadingMore={loadingMore.has(activeChannelId)}
-            reactions={activeReactions}
-            pins={activePins}
-            mentionUsers={mentionUsers}
-            onSend={text => sendToChannel(activeChannelId, text)}
-            onTyping={() => socketRef.current?.sendTyping(activeChannelId)}
-            onLoadMore={() => loadMoreMessages(activeChannelId)}
-            onReact={(msgId, emoji) => socketRef.current?.sendReaction(activeChannelId, msgId, emoji)}
-            onEdit={(msgId, text) => socketRef.current?.sendEdit(activeChannelId, msgId, text)}
-            onDelete={msgId => socketRef.current?.sendDelete(activeChannelId, msgId)}
-            onPin={msgId => pinInChannel(activeChannelId, msgId)}
-            onUnpin={msgId => unpinInChannel(activeChannelId, msgId)}
-            onUserClick={(uid, _e) => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
-        />
+        <motion.div
+            layoutId={`solo-${activeChannelId}`}
+            layout
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            className="pane-solo-cell"
+        >
+            <ChatView
+                channelId={activeChannelId}
+                channelName={activeDisplayName}
+                isDm={activeChannelKind === "dm"}
+                myRole={myRole}
+                onOpenSettings={() => { setSettingsChannelId(activeChannelId); setSettingsOpen(true); }}
+                onOpenDetails={() => openDetailsForPane(activeChannelId, activeDisplayName, null)}
+                messages={activeMessages}
+                usernames={usernames}
+                currentUserId={userId}
+                myUsername={myName}
+                typingNames={activeTyping}
+                connected={connected}
+                hasMore={hasMore[activeChannelId] ?? false}
+                loadingMore={loadingMore.has(activeChannelId)}
+                reactions={activeReactions}
+                pins={activePins}
+                mentionUsers={mentionUsers}
+                onSend={text => sendToChannel(activeChannelId, text)}
+                onTyping={() => socketRef.current?.sendTyping(activeChannelId)}
+                onLoadMore={() => loadMoreMessages(activeChannelId)}
+                onReact={(msgId, emoji) => socketRef.current?.sendReaction(activeChannelId, msgId, emoji)}
+                onEdit={(msgId, text) => socketRef.current?.sendEdit(activeChannelId, msgId, text)}
+                onDelete={msgId => socketRef.current?.sendDelete(activeChannelId, msgId)}
+                onPin={msgId => pinInChannel(activeChannelId, msgId)}
+                onUnpin={msgId => unpinInChannel(activeChannelId, msgId)}
+                onUserClick={(uid, _e) => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
+            />
+        </motion.div>
     ) : (
         <EmptyContent />
     );

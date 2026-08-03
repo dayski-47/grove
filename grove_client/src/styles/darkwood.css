@@ -511,6 +511,14 @@ input, textarea {
   position: relative;
 }
 
+.pane-solo-cell {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* ── Grove brand / empty state ──────────────────────────────── */
 
 .gv-empty {
