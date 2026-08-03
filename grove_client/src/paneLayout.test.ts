@@ -10,7 +10,7 @@ function pane(paneId: string, channelId: number | null = 1): PaneContent {
 }
 
 function split(a: PaneTreeNode, b: PaneTreeNode): SplitNode {
-    return { type: "split", axis: "row", ratio: 0.5, a, b };
+    return { type: "split", nodeId: crypto.randomUUID(), axis: "row", ratio: 0.5, a, b };
 }
 
 describe("countLeaves", () => {
@@ -289,5 +289,76 @@ describe("resizeSplit", () => {
         const tree = split(makeLeaf(pane("p1")), split(makeLeaf(pane("p2")), makeLeaf(pane("p3"))));
         const result = resizeSplit(tree, ["b"], 0.3) as SplitNode;
         expect(result.a).toBe(tree.a);
+    });
+
+    it("preserves the split node's nodeId when only its ratio changes", () => {
+        const tree = split(makeLeaf(pane("p1")), makeLeaf(pane("p2")));
+        const result = resizeSplit(tree, [], 0.7) as SplitNode;
+        expect(result.nodeId).toBe(tree.nodeId);
+    });
+});
+
+// Regression coverage for a real data-loss bug: PaneGrid used to key its
+// AnimatePresence split-cells by a derived "leftmost leaf" id. That id can
+// change even when a split node is structurally the same node (just
+// restructured elsewhere in the tree), which made React remount the
+// split-cell and silently wipe local state (draft text, scroll position)
+// underneath it. The fix gives every SplitNode a stable `nodeId` that
+// survives such restructuring. These tests prove that guarantee at the
+// paneLayout.ts level (PaneGrid's `cellKey` just consumes it).
+describe("SplitNode nodeId stability", () => {
+    it("mints a fresh nodeId for the new split created by splitAuto", () => {
+        const root = makeLeaf(pane("p1"));
+        const result = splitAuto(root, "p1", pane("p2", 2)) as SplitNode;
+        expect(typeof result.nodeId).toBe("string");
+        expect(result.nodeId.length).toBeGreaterThan(0);
+    });
+
+    it("mints a fresh, distinct nodeId for the new split created by splitDirectional", () => {
+        const rootA = makeLeaf(pane("p1"));
+        const resultA = splitDirectional(rootA, "p1", pane("p2", 2), "left") as SplitNode;
+        const rootB = makeLeaf(pane("p3"));
+        const resultB = splitDirectional(rootB, "p3", pane("p4", 4), "left") as SplitNode;
+        expect(typeof resultA.nodeId).toBe("string");
+        expect(resultA.nodeId.length).toBeGreaterThan(0);
+        expect(resultA.nodeId).not.toBe(resultB.nodeId);
+    });
+
+    it("keeps the pre-existing target leaf's own paneId when splitDirectional reorders it into slot b", () => {
+        // direction "left" puts the new pane in `a` and the persisting leaf in
+        // `b` — the leaf itself needs no nodeId (leaves don't have one) and
+        // its paneId is untouched; only the wrapping split node is new.
+        const root = makeLeaf(pane("p1"));
+        const result = splitDirectional(root, "p1", pane("p2", 2), "left") as SplitNode;
+        expect(result.b.type).toBe("leaf");
+        expect((result.b as { pane: PaneContent }).pane.paneId).toBe("p1");
+    });
+
+    it("rebalance preserves nodeId while recomputing ratio", () => {
+        const tree = split(makeLeaf(pane("p1")), makeLeaf(pane("p2"))) as SplitNode;
+        const result = rebalance(tree) as SplitNode;
+        expect(result.nodeId).toBe(tree.nodeId);
+    });
+
+    it("removePane preserves the promoted sibling split's own nodeId when the other leaf closes", () => {
+        // root = split(leafP, split(leafQ, leafR)); closing P promotes the
+        // inner split up to become the new root. That inner split is the
+        // SAME node — Q and R's content never changed — so it must keep its
+        // own nodeId, not report a new one just because it moved to the root.
+        const inner = split(makeLeaf(pane("q")), makeLeaf(pane("r", 3)));
+        const root = split(makeLeaf(pane("p")), inner);
+        const result = removePane(root, "p") as SplitNode;
+        expect(result.nodeId).toBe(inner.nodeId);
+    });
+
+    it("removePane keeps the split node's own nodeId when it rebuilds after pruning a deeper leaf", () => {
+        // Removing "r" prunes a leaf out of the right branch (collapsing it
+        // to the surviving leaf "q"), so the root split itself gets rebuilt
+        // with a new `b` child — but the root split IS the same node
+        // conceptually and must carry its existing nodeId forward.
+        const rightBranch = split(makeLeaf(pane("q")), makeLeaf(pane("r", 3)));
+        const root = split(makeLeaf(pane("p")), rightBranch);
+        const result = removePane(root, "r") as SplitNode;
+        expect(result.nodeId).toBe(root.nodeId);
     });
 });

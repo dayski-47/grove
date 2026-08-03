@@ -21,11 +21,16 @@ export const KIND_ACCENT: Record<PaneContent["kind"], string> = {
     details:      "#a56ad8",
 };
 
-// A nested split doesn't have its own stable id, but its leftmost leaf's
-// paneId is stable and unique — use it to key subtrees across renders so
-// AnimatePresence can tell which branch is "staying" vs "new" on a split.
-function firstLeafId(node: PaneTreeNode): string {
-    return node.type === "leaf" ? node.pane.paneId : firstLeafId(node.a);
+// Key subtrees by stable identity so AnimatePresence can tell which branch
+// is "staying" vs "new" across a split-tree restructure. A leaf's own
+// paneId is already stable; a split node carries its own `nodeId` (minted
+// once at creation and preserved across resize/rebalance/promotion — see
+// paneLayout.ts) specifically so that identity doesn't shift just because
+// restructuring changed which leaf happens to sit leftmost underneath it.
+// Keying by a derived "first leaf" id instead would remount (and silently
+// wipe local state under) a subtree that never conceptually changed.
+function cellKey(node: PaneTreeNode): string {
+    return node.type === "leaf" ? node.pane.paneId : node.nodeId;
 }
 
 export interface PaneGridProps {
@@ -67,7 +72,7 @@ export function PaneGrid({
         <div className={`pane-grid-root${chromeState === "state2" && pillHovered ? " pane-grid-dimmed" : ""}`}>
             <AnimatePresence initial={false}>
                 <motion.div
-                    key={firstLeafId(root)}
+                    key={cellKey(root)}
                     className="pane-split-cell"
                     layout
                     initial={{ opacity: 0, scale: 0.94 }}
@@ -107,7 +112,7 @@ function PaneNode({
             <div className={`pane-split pane-split-${node.axis}`} ref={containerRef}>
                 <AnimatePresence initial={false}>
                     <motion.div
-                        key={firstLeafId(node.a)}
+                        key={cellKey(node.a)}
                         className="pane-split-cell"
                         layout
                         initial={aSkipsEntrance ? false : { opacity: 0, scale: 0.94 }}
@@ -124,7 +129,7 @@ function PaneNode({
                         onResize={ratio => onResizeSplit(path, ratio)}
                     />
                     <motion.div
-                        key={firstLeafId(node.b)}
+                        key={cellKey(node.b)}
                         className="pane-split-cell"
                         layout
                         initial={bSkipsEntrance ? false : { opacity: 0, scale: 0.94 }}

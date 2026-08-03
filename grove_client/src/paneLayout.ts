@@ -27,11 +27,19 @@ export interface LeafNode {
 }
 
 export interface SplitNode {
-    type:  "split";
-    axis:  SplitAxis;
-    ratio: number;
-    a:     PaneTreeNode;
-    b:     PaneTreeNode;
+    type:   "split";
+    // Stable identity for this split node, independent of which leaf
+    // happens to be leftmost underneath it. Minted once when the split is
+    // first created and carried forward by every rebuild that preserves the
+    // node's meaning (resize, rebalance, sibling promotion on close) — see
+    // PaneGrid's cellKey, which keys split-cell motion.div's by this instead
+    // of a derived "first leaf" id so unrelated restructuring doesn't
+    // remount (and silently wipe local state under) an unchanged subtree.
+    nodeId: string;
+    axis:   SplitAxis;
+    ratio:  number;
+    a:      PaneTreeNode;
+    b:      PaneTreeNode;
 }
 
 export type PaneTreeNode = LeafNode | SplitNode;
@@ -110,6 +118,7 @@ export function splitAuto(root: PaneTreeNode, targetPaneId: string, newPane: Pan
     if (findLeafById(root, targetPaneId) === null) return root;
     const next = replaceLeaf(root, targetPaneId, 0, (leaf, depth) => ({
         type: "split",
+        nodeId: crypto.randomUUID(),
         axis: nextAxis(depth),
         ratio: 0.5,
         a: leaf,
@@ -132,6 +141,7 @@ export function splitDirectional(
 
     const next = replaceLeaf(root, targetPaneId, 0, leaf => ({
         type: "split",
+        nodeId: crypto.randomUUID(),
         axis,
         ratio: 0.5,
         a: newPaneFirst ? makeLeaf(newPane) : leaf,
@@ -148,7 +158,11 @@ export function removePane(root: PaneTreeNode, paneId: string): PaneTreeNode | n
     const b = removePane(root.b, paneId);
     if (a === null) return b;
     if (b === null) return a;
-    return rebalance({ type: "split", axis: root.axis, ratio: root.ratio, a, b });
+    // Rebuilding the SAME split node (its position in the tree didn't
+    // change, only its children got pruned) — carry the existing nodeId
+    // forward rather than minting a new one, so PaneGrid's stable-identity
+    // keying doesn't remount this subtree.
+    return rebalance({ type: "split", nodeId: root.nodeId, axis: root.axis, ratio: root.ratio, a, b });
 }
 
 export type SplitPath = ("a" | "b")[];
