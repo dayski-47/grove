@@ -255,6 +255,9 @@ pub async fn create_channel(
                 "Server error".to_string(),
             )
         })?;
+    state
+        .subscribers
+        .subscribe(channel_id as u64, auth.user_id as u64);
 
     Ok(Json(CreateChannelResponse {
         channel_id,
@@ -429,6 +432,9 @@ pub async fn join_by_code(
         .set_role(channel_id, auth.user_id, "member")
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .subscribers
+        .subscribe(channel_id as u64, auth.user_id as u64);
 
     Ok(Json(JoinByCodeResponse { channel_id, name }))
 }
@@ -576,6 +582,9 @@ pub async fn kick_member(
         .remove_role(channel_id, target_user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .subscribers
+        .unsubscribe(channel_id as u64, target_user_id as u64);
 
     Ok(StatusCode::OK)
 }
@@ -651,6 +660,9 @@ pub async fn join_channel(
         .sadd(&key, auth.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .subscribers
+        .subscribe(req.channel_id as u64, auth.user_id as u64);
 
     Ok(StatusCode::OK)
 }
@@ -796,7 +808,7 @@ pub async fn open_dm(
 
     if let Some(channel_id) = existing {
         // Ensure both are in the Redis membership set (handles reconnect/Redis flush).
-        seed_dm_membership(channel_id, me, them, &state.redis).await?;
+        seed_dm_membership(channel_id, me, them, &state.redis, &state.subscribers).await?;
         return Ok(Json(OpenDmResponse { channel_id }));
     }
 
@@ -825,7 +837,7 @@ pub async fn open_dm(
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error".into()))?;
 
-    seed_dm_membership(channel_id, me, them, &state.redis).await?;
+    seed_dm_membership(channel_id, me, them, &state.redis, &state.subscribers).await?;
 
     Ok(Json(OpenDmResponse { channel_id }))
 }
@@ -835,6 +847,7 @@ async fn seed_dm_membership(
     user_a: i64,
     user_b: i64,
     redis: &redis::aio::ConnectionManager,
+    subscribers: &crate::memory::subscribers::ChannelSubscribers,
 ) -> Result<(), (StatusCode, String)> {
     let mut con = redis.clone();
     let key = format!("channel:{}:members", channel_id);
@@ -844,6 +857,8 @@ async fn seed_dm_membership(
         .query_async(&mut con)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "redis error".into()))?;
+    subscribers.subscribe(channel_id as u64, user_a as u64);
+    subscribers.subscribe(channel_id as u64, user_b as u64);
     Ok(())
 }
 
@@ -1104,6 +1119,7 @@ mod tests {
             jwt_secret: "test-secret-at-least-32-bytes-long!!".to_string(),
             presence: crate::cache::presence::PresenceTracker::new(redis.clone()),
             roles: crate::cache::roles::RoleCache::with_prefix(redis, test_prefix),
+            subscribers: crate::memory::subscribers::ChannelSubscribers::new(),
         })
     }
 

@@ -8,6 +8,7 @@ pub mod validation;
 use crate::api::auth::Claims;
 use crate::cache::presence::PresenceTracker;
 use crate::cache::roles::RoleCache;
+use crate::memory::subscribers::ChannelSubscribers;
 use axum::extract::FromRequestParts;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub jwt_secret: String,
     pub presence: PresenceTracker,
     pub roles: RoleCache,
+    pub subscribers: ChannelSubscribers,
 }
 
 pub struct AuthenticatedUser {

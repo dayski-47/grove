@@ -35,8 +35,14 @@ pub async fn handle_connection(
         .execute(&app_state.db)
         .await;
 
-    if let Err(e) =
-        seed_redis_membership(user_id, &app_state.db, &app_state.redis, &app_state.roles).await
+    if let Err(e) = seed_redis_membership(
+        user_id,
+        &app_state.db,
+        &app_state.redis,
+        &app_state.roles,
+        &app_state.subscribers,
+    )
+    .await
     {
         eprintln!("warn: redis membership seed failed for {user_id}: {e}");
     }
@@ -75,6 +81,7 @@ pub async fn handle_connection(
 
     presence_task.abort();
     state.remove_connection(user_id);
+    app_state.subscribers.remove_user(user_id);
     let _ = app_state.presence.mark_offline(user_id).await; // don't let Redis errors skip the broadcast
     broadcast_presence(user_id, "offline", &state);
     Ok(())
@@ -143,6 +150,7 @@ async fn seed_redis_membership(
     db: &sqlx::PgPool,
     redis: &ConnectionManager,
     roles: &crate::cache::roles::RoleCache,
+    subscribers: &crate::memory::subscribers::ChannelSubscribers,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut con = redis.clone();
 
@@ -156,6 +164,7 @@ async fn seed_redis_membership(
         let key = format!("channel:{}:members", cid);
         let _: () = con.sadd(&key, user_id as i64).await?;
         roles.set_role(cid, user_id as i64, &role).await?;
+        subscribers.subscribe(cid as u64, user_id);
     }
 
     // DM channels — both parties must be in the Redis set
@@ -172,6 +181,12 @@ async fn seed_redis_membership(
             .sadd(&key, b)
             .query_async(&mut con)
             .await?;
+        // Only `user_id` (the party actually connecting right now) is known
+        // to have a live connection — subscribing the other party here too
+        // is harmless (broadcast_to_channel simply won't find a live sender
+        // for them until they connect and seed their own side).
+        subscribers.subscribe(cid as u64, a as u64);
+        subscribers.subscribe(cid as u64, b as u64);
     }
 
     Ok(())
@@ -267,7 +282,7 @@ pub async fn handle_binary_message(
             frame[MessageHeader::SIZE..MessageHeader::SIZE + 8]
                 .copy_from_slice(&msg_id.to_le_bytes());
             frame[MessageHeader::SIZE + 8..].copy_from_slice(text_bytes);
-            broadcast_to_channel(&frame, channel_id, state, &app_state.redis).await?;
+            broadcast_to_channel(&frame, channel_id, state, &app_state.subscribers);
         }
 
         MessageType::TYPING => {
@@ -276,7 +291,7 @@ pub async fn handle_binary_message(
                 return Ok(());
             }
             let frame = sanitize_frame(data, user_id, ts);
-            broadcast_to_channel(&frame, channel_id, state, &app_state.redis).await?;
+            broadcast_to_channel(&frame, channel_id, state, &app_state.subscribers);
         }
 
         MessageType::CALL_SIGNAL => {
@@ -344,7 +359,7 @@ pub async fn handle_binary_message(
                 ts,
                 &broadcast_text,
             ) {
-                broadcast_to_channel(&frame, channel_id, state, &app_state.redis).await?;
+                broadcast_to_channel(&frame, channel_id, state, &app_state.subscribers);
             }
         }
 
@@ -383,7 +398,7 @@ pub async fn handle_binary_message(
                 ts,
                 &broadcast_text,
             ) {
-                broadcast_to_channel(&frame, channel_id, state, &app_state.redis).await?;
+                broadcast_to_channel(&frame, channel_id, state, &app_state.subscribers);
             }
         }
 
@@ -427,7 +442,7 @@ pub async fn handle_binary_message(
                 ts,
                 &broadcast_text,
             ) {
-                broadcast_to_channel(&frame, channel_id, state, &app_state.redis).await?;
+                broadcast_to_channel(&frame, channel_id, state, &app_state.subscribers);
             }
         }
 
@@ -445,26 +460,25 @@ async fn is_channel_member(user_id: u64, channel_id: u64, redis: &ConnectionMana
         .unwrap_or(false)
 }
 
-// One ConnectionManager clone per call (Arc bump) instead of opening a new socket.
-// Bytes::clone() is also O(1) — no copy per recipient.
-async fn broadcast_to_channel(
+// Reads the in-memory ChannelSubscribers index instead of a Redis SMEMBERS —
+// this used to be a Redis round-trip on every single WS frame (including
+// high-frequency TYPING events). Bytes::clone() is O(1) — no copy per
+// recipient.
+fn broadcast_to_channel(
     data: &[u8],
     channel_id: u64,
     state: &ServerState,
-    redis: &ConnectionManager,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut con = redis.clone();
-    let key = format!("channel:{}:members", channel_id);
-    let member_ids: Vec<i64> = con.smembers(&key).await?;
+    subscribers: &crate::memory::subscribers::ChannelSubscribers,
+) {
+    let member_ids = subscribers.members_of(channel_id);
 
     let shared = Bytes::copy_from_slice(data);
     let connections = state.connections.read().unwrap();
     for member_id in member_ids {
-        if let Some(tx) = connections.get(&(member_id as u64)) {
+        if let Some(tx) = connections.get(&member_id) {
             let _ = tx.send(WsMessage::Binary(shared.clone()));
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -488,6 +502,7 @@ mod tests {
             jwt_secret: "test-secret-at-least-32-bytes-long!!".to_string(),
             presence: PresenceTracker::new(redis.clone()),
             roles: RoleCache::new(redis),
+            subscribers: crate::memory::subscribers::ChannelSubscribers::new(),
         })
     }
 
@@ -563,6 +578,66 @@ mod tests {
             count, 1,
             "the message must have actually been inserted, not silently dropped"
         );
+        Ok(())
+    }
+
+    /// Regression test for the broadcast_to_channel rewrite: fan-out now
+    /// reads the in-memory ChannelSubscribers index instead of a Redis
+    /// SMEMBERS call, so this proves a message from one connected member
+    /// still reaches another connected member through the new path.
+    #[sqlx::test]
+    async fn text_message_is_broadcast_to_other_subscribed_members(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let app_state = make_app_state(pool).await;
+        let server_state = ServerState::new();
+        let sender_id: u64 = 1;
+        let recipient_id: u64 = 2;
+
+        sqlx::query(
+            "INSERT INTO users (id, username, email, password_hash) VALUES
+             (1, 'alice', 'a@x.com', 'h'), (2, 'bob', 'b@x.com', 'h')",
+        )
+        .execute(&app_state.db)
+        .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&app_state.db)
+                .await?;
+        sqlx::query("INSERT INTO channel_members (channel_id, user_id) VALUES ($1, 1), ($1, 2)")
+            .bind(channel_id)
+            .execute(&app_state.db)
+            .await?;
+
+        let mut con = app_state.redis.clone();
+        let key = format!("channel:{}:members", channel_id);
+        let _: () = redis::AsyncCommands::sadd(&mut con, &key, sender_id as i64)
+            .await
+            .unwrap();
+        let _: () = redis::AsyncCommands::sadd(&mut con, &key, recipient_id as i64)
+            .await
+            .unwrap();
+
+        // Mirrors what seed_redis_membership does on WS connect for each party.
+        app_state
+            .subscribers
+            .subscribe(channel_id as u64, sender_id);
+        app_state
+            .subscribers
+            .subscribe(channel_id as u64, recipient_id);
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        server_state.add_connection(recipient_id, tx);
+
+        let frame = text_frame(sender_id, channel_id as u64, "hello");
+        handle_binary_message(&frame, &server_state, &app_state, sender_id)
+            .await
+            .expect("valid message should be processed");
+
+        let received = rx
+            .try_recv()
+            .expect("recipient should have received the broadcast frame");
+        assert!(matches!(received, WsMessage::Binary(_)));
         Ok(())
     }
 }

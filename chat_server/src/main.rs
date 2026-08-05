@@ -34,6 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let redis_conn = cache::connect_redis(&redis_url).await?;
     let presence = cache::presence::PresenceTracker::new(redis_conn.clone());
     let roles = cache::roles::RoleCache::new(redis_conn.clone());
+    let subscribers = memory::subscribers::ChannelSubscribers::new();
 
     let app_state = api::AppState {
         db: db_pool,
@@ -41,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         jwt_secret,
         presence,
         roles,
+        subscribers,
     };
     let app_state_ws = Arc::new(app_state.clone());
 
