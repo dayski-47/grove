@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { GroveSocket } from "../socket";
 import {
@@ -8,7 +8,6 @@ import {
     getChannelPins, pinMessage, unpinMessage, searchUsers,
     joinByCode, getChannelMembers,
 } from "../api";
-import { ChannelSettingsModal } from "./ChannelSettingsModal";
 import {
     MessageType, type ParsedMessage, type SignalingMessage,
     type DmInfo, type FriendInfo, type ReactionUpdate,
@@ -37,10 +36,18 @@ import { BellIcon, FriendsIcon, SearchIcon } from "./appshell/icons";
 import { EmptyContent } from "./appshell/EmptyContent";
 import { CornerBranches } from "./appshell/CornerBranches";
 import { CallInline } from "./appshell/CallInline";
-import { FriendsPage } from "./appshell/FriendsPage";
 import { ProfileDrawer } from "./appshell/ProfileDrawer";
 import { NotifPanel } from "./appshell/NotifPanel";
 import { ToastContainer, type Toast } from "./appshell/ToastContainer";
+
+// Lazy-loaded: both are only ever needed after the user navigates to Friends
+// or opens channel Settings, so they shouldn't be in the initial bundle.
+const FriendsPage = lazy(() =>
+    import("./appshell/FriendsPage").then(m => ({ default: m.FriendsPage })),
+);
+const ChannelSettingsModal = lazy(() =>
+    import("./ChannelSettingsModal").then(m => ({ default: m.ChannelSettingsModal })),
+);
 
 /* ── Types ───────────────────────────────────────────────── */
 
@@ -1232,21 +1239,23 @@ export function AppShell({
             {/* ── Content ─────────────────────────────── */}
             <main className="dw-content" aria-label="Main content">
                 {activePage === "friends" ? (
-                    <FriendsPage
-                        friends={friendList}
-                        onlineFriends={onlineFriends}
-                        tab={friendTab}
-                        onTab={setFriendTab}
-                        showAdd={showAddFriend}
-                        addFriendId={addFriendId}
-                        onAddFriendId={setAddFriendId}
-                        onToggleAdd={() => setShowAddFriend(v => !v)}
-                        onAddFriend={handleAddFriend}
-                        onRemoveFriend={handleRemoveFriend}
-                        onDm={uid => { openDmWith(uid); setActivePage("chat"); }}
-                        onCall={initiateCall}
-                        onUserClick={uid => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
-                    />
+                    <Suspense fallback={null}>
+                        <FriendsPage
+                            friends={friendList}
+                            onlineFriends={onlineFriends}
+                            tab={friendTab}
+                            onTab={setFriendTab}
+                            showAdd={showAddFriend}
+                            addFriendId={addFriendId}
+                            onAddFriendId={setAddFriendId}
+                            onToggleAdd={() => setShowAddFriend(v => !v)}
+                            onAddFriend={handleAddFriend}
+                            onRemoveFriend={handleRemoveFriend}
+                            onDm={uid => { openDmWith(uid); setActivePage("chat"); }}
+                            onCall={initiateCall}
+                            onUserClick={uid => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
+                        />
+                    </Suspense>
                 ) : chromeState !== "state1" ? (
                     /* State 2/3 — the chrome pill/circle is reserved in-flow space next to
                        the tiled content, Hyprland-status-bar style, instead of floating on
@@ -1299,20 +1308,22 @@ export function AppShell({
                 const settingsChannel = channels.find(c => c.id === settingsChannelId);
                 if (!settingsChannel) return null;
                 return (
-                    <ChannelSettingsModal
-                        channelId={settingsChannelId}
-                        channelName={settingsChannel.name}
-                        description={settingsChannel.description}
-                        category={settingsChannel.category}
-                        isPrivate={settingsChannel.is_private}
-                        token={token}
-                        currentUserId={userId}
-                        myRole={myChannelRoles[settingsChannelId] ?? "member"}
-                        onClose={() => setSettingsOpen(false)}
-                        onUpdated={updates => setChannels(prev => prev.map(c => (
-                            c.id === settingsChannelId ? { ...c, ...updates } : c
-                        )))}
-                    />
+                    <Suspense fallback={null}>
+                        <ChannelSettingsModal
+                            channelId={settingsChannelId}
+                            channelName={settingsChannel.name}
+                            description={settingsChannel.description}
+                            category={settingsChannel.category}
+                            isPrivate={settingsChannel.is_private}
+                            token={token}
+                            currentUserId={userId}
+                            myRole={myChannelRoles[settingsChannelId] ?? "member"}
+                            onClose={() => setSettingsOpen(false)}
+                            onUpdated={updates => setChannels(prev => prev.map(c => (
+                                c.id === settingsChannelId ? { ...c, ...updates } : c
+                            )))}
+                        />
+                    </Suspense>
                 );
             })()}
 
