@@ -1,18 +1,20 @@
 use std::cell::UnsafeCell;
-use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-const POOL_SIZE: usize = 4096;
+pub(crate) const POOL_SIZE: usize = 4096;
 pub const MAX_MESSAGE_SIZE: usize = 8 * 1024;
 
-pub struct MessageSlot {
-    data: [u8; MAX_MESSAGE_SIZE],
-    len: usize,
-}
-
 pub struct MessagePool {
-    // boxed to avoid exhausting the 8 MiB stack limit
-    slots: UnsafeCell<Box<[MaybeUninit<MessageSlot>; POOL_SIZE]>>,
+    // Flat, heap-allocated ring buffer of POOL_SIZE fixed-size windows, each
+    // MAX_MESSAGE_SIZE bytes. `vec![0u8; N]` is specialized by the standard
+    // library to allocate zeroed memory directly — no large stack
+    // intermediate. This replaced a `Box<[MaybeUninit<MessageSlot>; POOL_SIZE]>`
+    // (a 32MB array-of-structs) that relied on the optimizer eliding a
+    // stack-then-move construction of that whole value before boxing it —
+    // not a language guarantee, and it reliably stack-overflowed in debug
+    // builds (reproduced via a `cargo test` run); it only survived release
+    // builds by luck of the current LLVM version's behavior.
+    buf: UnsafeCell<Vec<u8>>,
     head: AtomicUsize,
     tail: AtomicUsize,
 }
@@ -22,9 +24,9 @@ unsafe impl Send for MessagePool {}
 impl MessagePool {
     pub fn new() -> Self {
         Self {
+            buf: UnsafeCell::new(vec![0u8; POOL_SIZE * MAX_MESSAGE_SIZE]),
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
-            slots: UnsafeCell::new(Box::new(unsafe { MaybeUninit::uninit().assume_init() })),
         }
     }
 
@@ -39,16 +41,21 @@ impl MessagePool {
             if next == self.tail.load(Ordering::Acquire) {
                 return None;
             }
-            if let Ok(head) =
-                self.head
-                    .compare_exchange(head, next, Ordering::Release, Ordering::Relaxed)
+            if self
+                .head
+                .compare_exchange(head, next, Ordering::Release, Ordering::Relaxed)
+                .is_ok()
             {
-                let slot = unsafe {
-                    let slots = &mut *self.slots.get();
-                    &mut *slots[head].as_mut_ptr()
-                };
-                slot.len = size;
-                return Some(&mut slot.data[..size]);
+                let start = head * MAX_MESSAGE_SIZE;
+                // SAFETY: `head` was just exclusively claimed via the CAS
+                // above — no other in-flight call can be using this same
+                // window until this index is recycled by a matching
+                // free_old(). We take a raw pointer to the buffer's start
+                // and offset into it, never a `&mut` to the whole buffer,
+                // so concurrently-claimed (disjoint) windows never alias.
+                let ptr = unsafe { (*self.buf.get()).as_mut_ptr().add(start) };
+                let slice = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
+                return Some(slice);
             }
         }
     }

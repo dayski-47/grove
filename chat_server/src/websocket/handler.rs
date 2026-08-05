@@ -63,10 +63,13 @@ pub async fn handle_connection(
     });
 
     while let Some(msg) = read.next().await {
-        let msg = msg?;
+        let Ok(msg) = msg else { break };
         if msg.is_binary() {
             let data = msg.into_data();
-            handle_binary_message(&data, &state, &app_state, user_id).await?;
+            if let Err(e) = handle_binary_message(&data, &state, &app_state, user_id).await {
+                eprintln!("bad frame from {user_id}, closing connection: {e}");
+                break;
+            }
         }
     }
 
@@ -211,20 +214,23 @@ pub async fn handle_binary_message(
         return Ok(());
     }
 
-    let (msg_type, channel_id, text) = {
-        let slot = match state.msg_pool.alloc(data.len()) {
-            Some(s) => s,
-            None => return Ok(()),
-        };
-        slot.copy_from_slice(data);
-        let msg = Message::parse(slot as &[u8])?;
-        (
-            msg.header.msg_type,
-            msg.header.channel_id as u64,
-            msg.text()?.to_owned(),
-        )
+    // free_old must run whenever alloc succeeds, even if parsing fails below —
+    // otherwise a single malformed frame permanently strands its slot (never
+    // reclaimed), and enough of them across the pool's shared lifetime
+    // eventually exhaust it for every connection, silently dropping all
+    // future messages (alloc returns None) with no way to recover short of
+    // a process restart.
+    let slot = match state.msg_pool.alloc(data.len()) {
+        Some(s) => s,
+        None => return Ok(()),
     };
+    slot.copy_from_slice(data);
+    let parsed = Message::parse(slot as &[u8]).and_then(|msg| {
+        let text = msg.text()?.to_owned();
+        Ok((msg.header.msg_type, msg.header.channel_id as u64, text))
+    });
     state.msg_pool.free_old(1);
+    let (msg_type, channel_id, text) = parsed?;
 
     let ts = now_unix();
 
@@ -459,4 +465,104 @@ async fn broadcast_to_channel(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::AppState;
+    use crate::cache::presence::PresenceTracker;
+    use crate::cache::roles::RoleCache;
+    use crate::memory::message_pool::POOL_SIZE;
+    use crate::protocol::message::MessageHeader;
+
+    async fn make_app_state(pool: sqlx::PgPool) -> Arc<AppState> {
+        let redis_url =
+            std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
+        let redis = crate::cache::connect_redis(&redis_url)
+            .await
+            .expect("Redis must be reachable for this test — start it via docker-compose.prod.yml");
+        Arc::new(AppState {
+            db: pool,
+            redis: redis.clone(),
+            jwt_secret: "test-secret-at-least-32-bytes-long!!".to_string(),
+            presence: PresenceTracker::new(redis.clone()),
+            roles: RoleCache::new(redis),
+        })
+    }
+
+    fn text_frame(user_id: u64, channel_id: u64, text: &str) -> Vec<u8> {
+        let text_bytes = text.as_bytes();
+        let mut buf = vec![0u8; MessageHeader::SIZE + text_bytes.len()];
+        MessageHeader {
+            msg_type: MessageType::TEXT,
+            user_id: user_id as u32,
+            channel_id: channel_id as u32,
+            timestamp: 0,
+            text_len: text_bytes.len() as u16,
+        }
+        .to_bytes(&mut buf)
+        .unwrap();
+        buf[MessageHeader::SIZE..].copy_from_slice(text_bytes);
+        buf
+    }
+
+    /// Regression test for the message-pool leak: `alloc()` used to only be
+    /// paired with `free_old()` on the success path — a frame that failed to
+    /// parse (too short, or a spoofed `text_len`) or decode as UTF-8 stranded
+    /// its slot forever. Sending more malformed frames than the pool's total
+    /// capacity, pre-fix, permanently exhausts it for every connection; a
+    /// well-formed message sent afterward would silently never be inserted
+    /// (`alloc` returns `None`, and the handler returns `Ok(())` early).
+    #[sqlx::test]
+    async fn malformed_frames_dont_permanently_leak_the_message_pool(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let app_state = make_app_state(pool).await;
+        let server_state = ServerState::new();
+        let user_id: u64 = 1;
+
+        sqlx::query(
+            "INSERT INTO users (id, username, email, password_hash) VALUES (1, 'alice', 'a@x.com', 'h')",
+        )
+        .execute(&app_state.db)
+        .await?;
+        let channel_id: i64 =
+            sqlx::query_scalar("INSERT INTO channels (name) VALUES ('general') RETURNING id")
+                .fetch_one(&app_state.db)
+                .await?;
+        sqlx::query("INSERT INTO channel_members (channel_id, user_id) VALUES ($1, 1)")
+            .bind(channel_id)
+            .execute(&app_state.db)
+            .await?;
+        let mut con = app_state.redis.clone();
+        let _: () = redis::AsyncCommands::sadd(
+            &mut con,
+            format!("channel:{}:members", channel_id),
+            user_id as i64,
+        )
+        .await
+        .unwrap();
+
+        // Too short to even contain a header — parse() fails every time.
+        let too_short = vec![0u8; 3];
+        for _ in 0..(POOL_SIZE + 100) {
+            let _ = handle_binary_message(&too_short, &server_state, &app_state, user_id).await;
+        }
+
+        let frame = text_frame(user_id, channel_id as u64, "still works");
+        handle_binary_message(&frame, &server_state, &app_state, user_id)
+            .await
+            .expect("a well-formed message must still be processed after pool pressure");
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE channel_id = $1")
+            .bind(channel_id)
+            .fetch_one(&app_state.db)
+            .await?;
+        assert_eq!(
+            count, 1,
+            "the message must have actually been inserted, not silently dropped"
+        );
+        Ok(())
+    }
 }
