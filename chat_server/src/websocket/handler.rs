@@ -181,10 +181,8 @@ async fn seed_redis_membership(
             .sadd(&key, b)
             .query_async(&mut con)
             .await?;
-        // Only `user_id` (the party actually connecting right now) is known
-        // to have a live connection — subscribing the other party here too
-        // is harmless (broadcast_to_channel simply won't find a live sender
-        // for them until they connect and seed their own side).
+        // Subscribing the other party too is harmless — broadcast just
+        // won't find a live sender for them until they connect.
         subscribers.subscribe(cid as u64, a as u64);
         subscribers.subscribe(cid as u64, b as u64);
     }
@@ -229,12 +227,9 @@ pub async fn handle_binary_message(
         return Ok(());
     }
 
-    // free_old must run whenever alloc succeeds, even if parsing fails below —
-    // otherwise a single malformed frame permanently strands its slot (never
-    // reclaimed), and enough of them across the pool's shared lifetime
-    // eventually exhaust it for every connection, silently dropping all
-    // future messages (alloc returns None) with no way to recover short of
-    // a process restart.
+    // free_old must run even when parsing fails below — otherwise a bad
+    // frame permanently strands its slot, and enough of those exhaust the
+    // pool for everyone.
     let slot = match state.msg_pool.alloc(data.len()) {
         Some(s) => s,
         None => return Ok(()),
@@ -460,10 +455,8 @@ async fn is_channel_member(user_id: u64, channel_id: u64, redis: &ConnectionMana
         .unwrap_or(false)
 }
 
-// Reads the in-memory ChannelSubscribers index instead of a Redis SMEMBERS —
-// this used to be a Redis round-trip on every single WS frame (including
-// high-frequency TYPING events). Bytes::clone() is O(1) — no copy per
-// recipient.
+// No more Redis round-trip per frame — Bytes::clone() is O(1) too, so no
+// copy per recipient either.
 fn broadcast_to_channel(
     data: &[u8],
     channel_id: u64,
@@ -522,13 +515,9 @@ mod tests {
         buf
     }
 
-    /// Regression test for the message-pool leak: `alloc()` used to only be
-    /// paired with `free_old()` on the success path — a frame that failed to
-    /// parse (too short, or a spoofed `text_len`) or decode as UTF-8 stranded
-    /// its slot forever. Sending more malformed frames than the pool's total
-    /// capacity, pre-fix, permanently exhausts it for every connection; a
-    /// well-formed message sent afterward would silently never be inserted
-    /// (`alloc` returns `None`, and the handler returns `Ok(())` early).
+    /// A bad frame used to leak its pool slot forever. Enough of them and
+    /// the pool's exhausted for everyone — a later good message would
+    /// silently never get inserted.
     #[sqlx::test]
     async fn malformed_frames_dont_permanently_leak_the_message_pool(
         pool: sqlx::PgPool,
@@ -581,10 +570,8 @@ mod tests {
         Ok(())
     }
 
-    /// Regression test for the broadcast_to_channel rewrite: fan-out now
-    /// reads the in-memory ChannelSubscribers index instead of a Redis
-    /// SMEMBERS call, so this proves a message from one connected member
-    /// still reaches another connected member through the new path.
+    /// Fan-out went from a Redis SMEMBERS call to the in-memory index —
+    /// confirm messages still actually reach other connected members.
     #[sqlx::test]
     async fn text_message_is_broadcast_to_other_subscribed_members(
         pool: sqlx::PgPool,

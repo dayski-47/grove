@@ -998,14 +998,10 @@ export function AppShell({
         setPins(prev => ({ ...prev, [channelId]: (prev[channelId] ?? []).filter(p => p.message_id !== msgId) }));
     }, [token]);
 
-    // Stable per-row-callback identities for the solo (State 1) ChatView —
-    // required for MessageList/MessageRow's React.memo to actually skip
-    // re-rendering unrelated rows. Only re-created when the active channel
-    // itself changes, not on every unrelated AppShell render. (The tiled
-    // renderPaneContent path below still builds fresh closures per render —
-    // giving those the same treatment needs each pane's content to become
-    // its own component rather than a plain render-prop helper, a larger
-    // restructure left for a future pass.)
+    // Stable callbacks for the solo ChatView — MessageRow's React.memo only
+    // works if these don't change identity on every unrelated render.
+    // (renderPaneContent below doesn't get the same treatment — it's a
+    // plain helper, not a component, so it can't hold its own useCallback.)
     const handleSoloReact = useCallback((msgId: number, emoji: string) => {
         if (activeChannelId !== null) socketRef.current?.sendReaction(activeChannelId, msgId, emoji);
     }, [activeChannelId]);

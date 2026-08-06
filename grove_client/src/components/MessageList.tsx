@@ -140,10 +140,8 @@ export const MessageList = forwardRef<MessageListHandle, {
 
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editText,  setEditText]  = useState("");
-    // Mirrors of the state above for submitEdit's stable callback — it needs
-    // the LATEST values at call time without editText (which changes every
-    // keystroke) being in its own dependency array, or its identity would
-    // change on every keystroke and defeat memoization for every row.
+    // Refs so submitEdit can read the latest values without editText in its
+    // own deps — that'd change its identity every keystroke.
     const editingIdRef = useRef(editingId);
     const editTextRef  = useRef(editText);
     editingIdRef.current = editingId;
@@ -161,10 +159,8 @@ export const MessageList = forwardRef<MessageListHandle, {
     }, [onEdit]);
     const cancelEdit = useCallback(() => setEditingId(null), []);
 
-    // Stable identities shared by every row — required for React.memo on
-    // IncomingRow/OutgoingRow to actually skip re-rendering unrelated rows.
-    // Each row supplies its own message id/userId at call time rather than
-    // MessageList pre-binding a fresh closure per message on every render.
+    // One shared callback per action instead of a fresh closure per message —
+    // rows pass their own id back at call time.
     const handleDelete = useCallback((id: number) => onDelete?.(id), [onDelete]);
     const handleReact  = useCallback((id: number, emoji: string) => onReact?.(id, emoji), [onReact]);
     const handlePin    = useCallback((id: number) => onPin?.(id), [onPin]);
@@ -254,12 +250,8 @@ export const MessageList = forwardRef<MessageListHandle, {
                 const staggerIdx = justArrived.get(msgKey(m));
                 const isNew      = staggerIdx !== undefined;
 
-                // editText only matters to the row actually being edited (see
-                // MessageBody — it's only read when isEditing is true), so every
-                // other row gets a constant "" here instead of the live typed
-                // value. Otherwise every row's props would change identity on
-                // every keystroke, defeating React.memo for the whole list just
-                // because one row is being edited.
+                // Only the row being edited needs the live text — everyone
+                // else gets "" so a keystroke doesn't re-render the whole list.
                 const rowProps = {
                     m, name, myUsername, isOwn, senderColor, canModerate,
                     isCont: cont, isPinned: pinned, reactions: msgRx,

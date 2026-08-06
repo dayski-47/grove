@@ -5,15 +5,10 @@ pub(crate) const POOL_SIZE: usize = 4096;
 pub const MAX_MESSAGE_SIZE: usize = 8 * 1024;
 
 pub struct MessagePool {
-    // Flat, heap-allocated ring buffer of POOL_SIZE fixed-size windows, each
-    // MAX_MESSAGE_SIZE bytes. `vec![0u8; N]` is specialized by the standard
-    // library to allocate zeroed memory directly — no large stack
-    // intermediate. This replaced a `Box<[MaybeUninit<MessageSlot>; POOL_SIZE]>`
-    // (a 32MB array-of-structs) that relied on the optimizer eliding a
-    // stack-then-move construction of that whole value before boxing it —
-    // not a language guarantee, and it reliably stack-overflowed in debug
-    // builds (reproduced via a `cargo test` run); it only survived release
-    // builds by luck of the current LLVM version's behavior.
+    // Flat ring buffer, POOL_SIZE windows of MAX_MESSAGE_SIZE bytes each.
+    // Used to be a boxed [MaybeUninit<MessageSlot>; POOL_SIZE] — that 32MB
+    // value got built on the stack before moving into the box, which isn't
+    // guaranteed and overflowed debug builds. vec![0u8; N] avoids that.
     buf: UnsafeCell<Vec<u8>>,
     head: AtomicUsize,
     tail: AtomicUsize,
@@ -47,12 +42,10 @@ impl MessagePool {
                 .is_ok()
             {
                 let start = head * MAX_MESSAGE_SIZE;
-                // SAFETY: `head` was just exclusively claimed via the CAS
-                // above — no other in-flight call can be using this same
-                // window until this index is recycled by a matching
-                // free_old(). We take a raw pointer to the buffer's start
-                // and offset into it, never a `&mut` to the whole buffer,
-                // so concurrently-claimed (disjoint) windows never alias.
+                // SAFETY: the CAS above exclusively claimed this window —
+                // no one else touches it until a matching free_old() frees
+                // it. Only a raw pointer into the buffer, never a &mut to
+                // the whole thing, so disjoint claimed windows can't alias.
                 let ptr = unsafe { (*self.buf.get()).as_mut_ptr().add(start) };
                 let slice = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
                 return Some(slice);

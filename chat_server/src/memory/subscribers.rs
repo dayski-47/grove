@@ -1,15 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-/// In-memory index of which connected/known users belong to which channels,
-/// kept in sync with Redis's `channel:{id}:members` sets at every place that
-/// mutates them. This exists purely so `broadcast_to_channel` can fan a
-/// message out to its recipients without a Redis round-trip on every single
-/// WS frame (previously a `SMEMBERS` call per TEXT/TYPING/REACTION/EDIT/
-/// DELETE frame). It is not the authorization boundary — `is_channel_member`
-/// still gates message processing straight against Redis — so a brief lag
-/// here (a newly-kicked user's very last in-flight broadcast) only affects
-/// fan-out, never who is allowed to read or send.
+/// In-memory mirror of Redis's `channel:{id}:members` sets, so
+/// `broadcast_to_channel` can fan out a message without a Redis round-trip
+/// per frame. Fan-out only — `is_channel_member` still gates against Redis
+/// directly, so staleness here never affects who can read or send.
 #[derive(Clone)]
 pub struct ChannelSubscribers {
     inner: Arc<RwLock<HashMap<u64, HashSet<u64>>>>,
