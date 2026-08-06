@@ -987,16 +987,45 @@ export function AppShell({
         socketRef.current?.sendText(channelId, text);
     }
 
-    async function pinInChannel(channelId: number, msgId: number) {
+    const pinInChannel = useCallback(async (channelId: number, msgId: number) => {
         await pinMessage(msgId, token).catch(() => {});
         const list = await getChannelPins(channelId, token).catch(() => [] as PinnedMessage[]);
         setPins(prev => ({ ...prev, [channelId]: list }));
-    }
+    }, [token]);
 
-    async function unpinInChannel(channelId: number, msgId: number) {
+    const unpinInChannel = useCallback(async (channelId: number, msgId: number) => {
         await unpinMessage(msgId, token).catch(() => {});
         setPins(prev => ({ ...prev, [channelId]: (prev[channelId] ?? []).filter(p => p.message_id !== msgId) }));
-    }
+    }, [token]);
+
+    // Stable per-row-callback identities for the solo (State 1) ChatView —
+    // required for MessageList/MessageRow's React.memo to actually skip
+    // re-rendering unrelated rows. Only re-created when the active channel
+    // itself changes, not on every unrelated AppShell render. (The tiled
+    // renderPaneContent path below still builds fresh closures per render —
+    // giving those the same treatment needs each pane's content to become
+    // its own component rather than a plain render-prop helper, a larger
+    // restructure left for a future pass.)
+    const handleSoloReact = useCallback((msgId: number, emoji: string) => {
+        if (activeChannelId !== null) socketRef.current?.sendReaction(activeChannelId, msgId, emoji);
+    }, [activeChannelId]);
+    const handleSoloEdit = useCallback((msgId: number, text: string) => {
+        if (activeChannelId !== null) socketRef.current?.sendEdit(activeChannelId, msgId, text);
+    }, [activeChannelId]);
+    const handleSoloDelete = useCallback((msgId: number) => {
+        if (activeChannelId !== null) socketRef.current?.sendDelete(activeChannelId, msgId);
+    }, [activeChannelId]);
+    const handleSoloPin = useCallback((msgId: number) => {
+        if (activeChannelId !== null) pinInChannel(activeChannelId, msgId);
+    }, [activeChannelId, pinInChannel]);
+    const handleSoloUnpin = useCallback((msgId: number) => {
+        if (activeChannelId !== null) unpinInChannel(activeChannelId, msgId);
+    }, [activeChannelId, unpinInChannel]);
+    const handleSoloUserClick = useCallback((uid: number) => {
+        setDrawerUid(uid);
+        setDrawerOpen(true);
+        resolveProfile(uid);
+    }, [resolveProfile]);
 
     function renderPaneContent(pane: PaneContent) {
         if (pane.kind === "notification") {
@@ -1134,12 +1163,12 @@ export function AppShell({
                 onSend={text => sendToChannel(activeChannelId, text)}
                 onTyping={() => socketRef.current?.sendTyping(activeChannelId)}
                 onLoadMore={() => loadMoreMessages(activeChannelId)}
-                onReact={(msgId, emoji) => socketRef.current?.sendReaction(activeChannelId, msgId, emoji)}
-                onEdit={(msgId, text) => socketRef.current?.sendEdit(activeChannelId, msgId, text)}
-                onDelete={msgId => socketRef.current?.sendDelete(activeChannelId, msgId)}
-                onPin={msgId => pinInChannel(activeChannelId, msgId)}
-                onUnpin={msgId => unpinInChannel(activeChannelId, msgId)}
-                onUserClick={(uid, _e) => { setDrawerUid(uid); setDrawerOpen(true); resolveProfile(uid); }}
+                onReact={handleSoloReact}
+                onEdit={handleSoloEdit}
+                onDelete={handleSoloDelete}
+                onPin={handleSoloPin}
+                onUnpin={handleSoloUnpin}
+                onUserClick={handleSoloUserClick}
             />
         </motion.div>
     ) : (

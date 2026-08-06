@@ -112,5 +112,5 @@ export interface MessageRowProps {
     onReact:      (id: number, emoji: string) => void;
     onPin:        (id: number) => void;
     onUnpin:      (id: number) => void;
-    onUserClick:  (event: React.MouseEvent) => void;
+    onUserClick:  (userId: number, event: React.MouseEvent) => void;
 }

@@ -1,8 +1,9 @@
+import { memo } from "react";
 import { MessageActions } from "./MessageActions";
 import { MessageBody } from "./MessageBody";
 import { avatarBg, formatTime, initial, type MessageRowProps } from "./shared";
 
-export function OutgoingRow({
+export const OutgoingRow = memo(function OutgoingRow({
     m, name, myUsername, isCont, isPinned, reactions,
     isNew, enterDelayMs,
     editingId, editText, onEditChange, onEditSubmit, onEditCancel,
@@ -23,7 +24,7 @@ export function OutgoingRow({
                 <button
                     className="dw-msg-avatar"
                     style={{ background: avatarBg(m.userId) }}
-                    onClick={onUserClick}
+                    onClick={e => onUserClick(m.userId, e)}
                     aria-label={`View ${name}'s profile`}
                 >
                     {initial(name)}
@@ -55,4 +56,4 @@ export function OutgoingRow({
             )}
         </div>
     );
-}
+});

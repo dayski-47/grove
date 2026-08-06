@@ -1,6 +1,7 @@
 import {
     forwardRef,
     Fragment,
+    useCallback,
     useEffect,
     useImperativeHandle,
     useLayoutEffect,
@@ -139,13 +140,41 @@ export const MessageList = forwardRef<MessageListHandle, {
 
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editText,  setEditText]  = useState("");
+    // Mirrors of the state above for submitEdit's stable callback — it needs
+    // the LATEST values at call time without editText (which changes every
+    // keystroke) being in its own dependency array, or its identity would
+    // change on every keystroke and defeat memoization for every row.
+    const editingIdRef = useRef(editingId);
+    const editTextRef  = useRef(editText);
+    editingIdRef.current = editingId;
+    editTextRef.current  = editText;
 
-    useImperativeHandle(ref, () => ({
-        startEdit: (id: number, text: string) => {
-            setEditingId(id);
-            setEditText(text);
-        },
-    }));
+    const startEdit = useCallback((id: number, text: string) => {
+        setEditingId(id);
+        setEditText(text);
+    }, []);
+    const submitEdit = useCallback(() => {
+        const id = editingIdRef.current;
+        const text = editTextRef.current;
+        if (id !== null && text.trim()) onEdit?.(id, text.trim());
+        setEditingId(null);
+    }, [onEdit]);
+    const cancelEdit = useCallback(() => setEditingId(null), []);
+
+    // Stable identities shared by every row — required for React.memo on
+    // IncomingRow/OutgoingRow to actually skip re-rendering unrelated rows.
+    // Each row supplies its own message id/userId at call time rather than
+    // MessageList pre-binding a fresh closure per message on every render.
+    const handleDelete = useCallback((id: number) => onDelete?.(id), [onDelete]);
+    const handleReact  = useCallback((id: number, emoji: string) => onReact?.(id, emoji), [onReact]);
+    const handlePin    = useCallback((id: number) => onPin?.(id), [onPin]);
+    const handleUnpin  = useCallback((id: number) => onUnpin?.(id), [onUnpin]);
+    const handleUserClick = useCallback(
+        (userId: number, event: React.MouseEvent) => onUserHover?.(userId, event),
+        [onUserHover],
+    );
+
+    useImperativeHandle(ref, () => ({ startEdit }), [startEdit]);
 
     /* Auto-scroll to bottom on new messages — only when near bottom */
     useEffect(() => {
@@ -184,13 +213,6 @@ export const MessageList = forwardRef<MessageListHandle, {
         observer.observe(sentinel);
         return () => observer.disconnect();
     }, []);
-
-    function startEdit(id: number, text: string) { setEditingId(id); setEditText(text); }
-    function submitEdit() {
-        if (editingId !== null && editText.trim()) onEdit?.(editingId, editText.trim());
-        setEditingId(null);
-    }
-    function cancelEdit() { setEditingId(null); }
 
     return (
         <div ref={listRef} className="dw-messages" role="log" aria-live="polite" aria-label="Messages" onScroll={onScroll}>
@@ -232,20 +254,26 @@ export const MessageList = forwardRef<MessageListHandle, {
                 const staggerIdx = justArrived.get(msgKey(m));
                 const isNew      = staggerIdx !== undefined;
 
+                // editText only matters to the row actually being edited (see
+                // MessageBody — it's only read when isEditing is true), so every
+                // other row gets a constant "" here instead of the live typed
+                // value. Otherwise every row's props would change identity on
+                // every keystroke, defeating React.memo for the whole list just
+                // because one row is being edited.
                 const rowProps = {
                     m, name, myUsername, isOwn, senderColor, canModerate,
                     isCont: cont, isPinned: pinned, reactions: msgRx,
                     isNew, enterDelayMs: (staggerIdx ?? 0) * 40,
-                    editingId, editText,
+                    editingId, editText: m.id === editingId ? editText : "",
                     onEditChange: setEditText,
                     onEditSubmit: submitEdit,
                     onEditCancel: cancelEdit,
                     onStartEdit: startEdit,
-                    onDelete: (id: number) => onDelete?.(id),
-                    onReact: (id: number, emoji: string) => onReact?.(id, emoji),
-                    onPin: (id: number) => onPin?.(id),
-                    onUnpin: (id: number) => onUnpin?.(id),
-                    onUserClick: (e: React.MouseEvent) => onUserHover?.(m.userId, e),
+                    onDelete: handleDelete,
+                    onReact: handleReact,
+                    onPin: handlePin,
+                    onUnpin: handleUnpin,
+                    onUserClick: handleUserClick,
                 };
 
                 const row = isDm
