@@ -172,12 +172,75 @@ M13.3 19 C15 19.8 16.8 20 18.7 21.2 C18.4 21.6 18 21.7 17.6 21.5
 C16 20.4 14.5 20 13.1 19.6 Z
 ```
 
-**Not yet designed:** `MsgIcon`, `PhoneIcon`. Should follow the same
-stroke-based, mark-derived vocabulary as Bell/Search/Close when implemented;
-not blocking this pass.
+**Not yet designed:** `PhoneIcon`. Should follow the same stroke-based,
+mark-derived vocabulary as Bell/Search/Close when implemented; not blocking
+this pass.
 
 Exact path coordinates above are from directional mockups, not
 pixel-verified production art — expect minor tuning during implementation.
+
+## Approved: Dynamic Island icons (`CommandIsland.tsx`)
+
+Found during review: the island's seven action buttons render literal emoji
+glyphs (`⚙ # 💬 👤 🔔 ⚡ …`) via `<span>{{item.icon}}</span>` in
+`ISLAND_ITEMS`, not SVGs — missed on first pass because it's text, not
+`<svg>`. Emoji ignore `currentColor` and render in full OS color, which is a
+bigger mismatch against Grove's monochrome palette than the old stock icons
+were. `.command-island-item` already sets `color` for focus/inert states, so
+switching to `currentColor`-driven SVGs is a drop-in fit once `IslandItem.icon`
+stops being a plain string.
+
+Mapping — reuse where the concept already exists, design where it doesn't:
+
+- **Notifications** (was 🔔) → reuse Bell exactly, no new path.
+- **Users** (was 👤) → reuse the Friends tree-with-roots exactly, no new path.
+- **Channels** (was `#`) → already plain mono text, not an emoji — unchanged.
+- **More** (was `…`) → three plain dots (`<span class="dots">`), stays
+  neutral, doesn't need the mark's language. Unchanged in spirit, just no
+  longer an emoji character.
+- **Messages, Settings, Activity** → new, designed below.
+
+**Messages** — stroke, rounded bubble with a curved tail instead of a sharp
+notch:
+
+```
+viewBox 0 0 24 24, fill none, stroke currentColor, stroke-width 1.6, round caps/joins
+M6 4 C4.9 4 4 4.9 4 6 L4 12 C4 13.1 4.9 14 6 14 L8 14 L8 17.5
+C8 17.9 8.5 18.1 8.8 17.8 L12.5 14 L18 14 C19.1 14 20 13.1 20 12
+L20 6 C20 4.9 19.1 4 18 4 Z
+```
+
+**Settings** — stroke, seed-head: one center node, six satellites on short
+spokes (deliberately not a mechanical gear — round nodes instead of teeth,
+consistent with the "grown not ruled" quality elsewhere):
+
+```
+viewBox 0 0 24 24, fill none, stroke currentColor, stroke-width 1.6, round caps/joins
+circle 12,12 r2.0 (center)
+circles r1.2 at: 19,12 · 15.5,5.94 · 8.5,5.94 · 5,12 · 8.5,18.06 · 15.5,18.06
+spokes (short lines center→each satellite):
+M13.9 12.3 L17.2 12.1
+M13.1 10.3 L14.7 7.1
+M10.9 10.3 L9.3 7.1
+M9.9 12 L6.6 12
+M10.9 13.7 L9.3 16.9
+M13.1 13.7 L14.7 16.9
+```
+
+**Activity** — stroke, asymmetric spark: five curved rays of varying length
+radiating from center, small dot at each tip (inert — reserved for later):
+
+```
+viewBox 0 0 24 24, fill none, stroke currentColor, stroke-width 1.6, round caps/joins
+M12 12 C12 9.3 11.7 7 12.3 4.6         + circle 12.3,4.2 r0.9
+M12 12 C14 10.6 16 9.6 18 8.1          + circle 18.3,7.8 r0.9
+M12 12 C14 13.4 16.4 14.5 18.8 15.6    + circle 19.1,15.9 r0.9
+M12 12 C10 13.4 8 15 6.5 17.4          + circle 6.2,17.7 r0.9
+M12 12 C9.6 10.1 7.1 9.1 4.9 8.6       + circle 4.5,8.5 r0.9
+```
+
+Confirmed via mockup showing all seven live in the actual island component
+(44px pill, 34px circular buttons) plus an isolated legend.
 
 ## Files this touches (for planning)
 
@@ -186,12 +249,16 @@ pixel-verified production art — expect minor tuning during implementation.
   `.dw-msg-time` font-family/tabular-nums confirmation.
 - `grove_client/src/components/appshell/icons.tsx` — `BellIcon`, `FriendsIcon`,
   `CloseIcon`/`RemoveIcon`, `SearchIcon` path data + fill/stroke attributes.
+- `grove_client/src/components/panes/CommandIsland.tsx` — `IslandItem.icon`
+  changes from `string` (emoji) to a render function/component reference;
+  `ISLAND_ITEMS` gets the new Settings/Messages/Activity icons plus reused
+  Bell/tree for Notifications/Users; Channels/More stay as they render today.
 - Font loading: swap the Google Fonts `@import` (or equivalent) from Geist
   Mono to JetBrains Mono in `darkwood.css`.
 
 ## Explicitly out of scope
 
 - Layout/structure changes of any kind (no sidebar, no new components).
-- `MsgIcon` / `PhoneIcon` redesign (follow-up, same vocabulary).
+- `PhoneIcon` redesign (follow-up, same vocabulary).
 - Structural color hierarchy and section-spacing tokens (rejected, see above).
 - The empty-state wordmark (unchanged).
