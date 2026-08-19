@@ -25,7 +25,12 @@ export function FriendsIcon() {
 }
 
 export function SearchIcon() {
-    return <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+    return (
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M13.5 4c3 0.5 4.9 2.9 4.5 6.1c-0.3 2.8-2.6 4.5-5.3 4.5c-2.9 0-5.2-2.1-5.2-5.1c0-3.2 2.7-5.7 6-5.5z"/>
+            <path d="M9 15.5 C7.3 17.3 5.4 19.1 4 20.3"/>
+        </svg>
+    );
 }
 
 export function MsgIcon() {
