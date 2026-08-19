@@ -172,9 +172,12 @@ M13.3 19 C15 19.8 16.8 20 18.7 21.2 C18.4 21.6 18 21.7 17.6 21.5
 C16 20.4 14.5 20 13.1 19.6 Z
 ```
 
-**Not yet designed:** `PhoneIcon`. Should follow the same stroke-based,
-mark-derived vocabulary as Bell/Search/Close when implemented; not blocking
-this pass.
+**Not yet designed:** `MsgIcon`, `PhoneIcon`. Both render side by side in
+`FriendsPage.tsx`'s per-friend action row (alongside the now-redrawn
+`RemoveIcon`) — deferring one without the other wouldn't actually fix that
+row's mixed vocabulary, so both stay stock Feather icons together. Should
+follow the same stroke-based, mark-derived vocabulary as Bell/Search/Close
+when implemented; not blocking this pass.
 
 Exact path coordinates above are from directional mockups, not
 pixel-verified production art — expect minor tuning during implementation.
@@ -259,6 +262,7 @@ Confirmed via mockup showing all seven live in the actual island component
 ## Explicitly out of scope
 
 - Layout/structure changes of any kind (no sidebar, no new components).
-- `PhoneIcon` redesign (follow-up, same vocabulary).
+- `MsgIcon` / `PhoneIcon` redesign (follow-up, same vocabulary — deferred
+  together since they render side by side in `FriendsPage.tsx`).
 - Structural color hierarchy and section-spacing tokens (rejected, see above).
 - The empty-state wordmark (unchanged).

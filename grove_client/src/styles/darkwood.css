@@ -1,5 +1,5 @@
 /* Grove — Darkwood Design System V2 */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 /* ============================================================
    RESET & BASE
@@ -471,6 +471,7 @@ input, textarea {
   font-size: 10px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   opacity: 0;
   transition: opacity var(--dur-fast);
   user-select: none;
