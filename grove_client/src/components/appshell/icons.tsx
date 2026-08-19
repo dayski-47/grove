@@ -62,3 +62,48 @@ export function CloseIcon() {
         </svg>
     );
 }
+
+export function MessagesIcon() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 4 C4.9 4 4 4.9 4 6 L4 12 C4 13.1 4.9 14 6 14 L8 14 L8 17.5 C8 17.9 8.5 18.1 8.8 17.8 L12.5 14 L18 14 C19.1 14 20 13.1 20 12 L20 6 C20 4.9 19.1 4 18 4 Z"/>
+        </svg>
+    );
+}
+
+export function SettingsIcon() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="2.0"/>
+            <circle cx="19" cy="12" r="1.2"/>
+            <circle cx="15.5" cy="5.94" r="1.2"/>
+            <circle cx="8.5" cy="5.94" r="1.2"/>
+            <circle cx="5" cy="12" r="1.2"/>
+            <circle cx="8.5" cy="18.06" r="1.2"/>
+            <circle cx="15.5" cy="18.06" r="1.2"/>
+            <path d="M13.9 12.3 L17.2 12.1"/>
+            <path d="M13.1 10.3 L14.7 7.1"/>
+            <path d="M10.9 10.3 L9.3 7.1"/>
+            <path d="M9.9 12 L6.6 12"/>
+            <path d="M10.9 13.7 L9.3 16.9"/>
+            <path d="M13.1 13.7 L14.7 16.9"/>
+        </svg>
+    );
+}
+
+export function ActivityIcon() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 12 C12 9.3 11.7 7 12.3 4.6"/>
+            <circle cx="12.3" cy="4.2" r="0.9"/>
+            <path d="M12 12 C14 10.6 16 9.6 18 8.1"/>
+            <circle cx="18.3" cy="7.8" r="0.9"/>
+            <path d="M12 12 C14 13.4 16.4 14.5 18.8 15.6"/>
+            <circle cx="19.1" cy="15.9" r="0.9"/>
+            <path d="M12 12 C10 13.4 8 15 6.5 17.4"/>
+            <circle cx="6.2" cy="17.7" r="0.9"/>
+            <path d="M12 12 C9.6 10.1 7.1 9.1 4.9 8.6"/>
+            <circle cx="4.5" cy="8.5" r="0.9"/>
+        </svg>
+    );
+}

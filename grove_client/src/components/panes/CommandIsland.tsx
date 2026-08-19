@@ -1,12 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { BellGlyph, FriendsIcon, MessagesIcon, SettingsIcon, ActivityIcon } from "../appshell/icons";
 
 export type IslandAction = "settings" | "channels" | "messages" | "users" | "notifications" | "activity" | "more";
+
+function HashIcon() {
+    return <span aria-hidden="true" className="hashlabel">#</span>;
+}
+
+function MoreDotsIcon() {
+    return (
+        <span aria-hidden="true" className="dots">
+            <span /><span /><span />
+        </span>
+    );
+}
 
 interface IslandItem {
     action: IslandAction;
     label:  string;
-    icon:   string;
+    icon:   React.ComponentType;
     /** "activity" and "more" are reserved for future icons per the design
         spec ("extensible, not fixed forever") — real, inert buttons rather
         than a stubbed promise. */
@@ -14,13 +27,13 @@ interface IslandItem {
 }
 
 const ISLAND_ITEMS: IslandItem[] = [
-    { action: "settings",      label: "Settings",      icon: "⚙" },
-    { action: "channels",      label: "Channels",      icon: "#" },
-    { action: "messages",      label: "Messages",      icon: "💬" },
-    { action: "users",         label: "Users",         icon: "👤" },
-    { action: "notifications", label: "Notifications", icon: "🔔" },
-    { action: "activity",      label: "Activity",      icon: "⚡", inert: true },
-    { action: "more",          label: "More",          icon: "…",  inert: true },
+    { action: "settings",      label: "Settings",      icon: SettingsIcon },
+    { action: "channels",      label: "Channels",      icon: HashIcon },
+    { action: "messages",      label: "Messages",      icon: MessagesIcon },
+    { action: "users",         label: "Users",         icon: FriendsIcon },
+    { action: "notifications", label: "Notifications", icon: BellGlyph },
+    { action: "activity",      label: "Activity",      icon: ActivityIcon, inert: true },
+    { action: "more",          label: "More",          icon: MoreDotsIcon, inert: true },
 ];
 
 export interface CommandIslandProps {
@@ -75,20 +88,23 @@ export function CommandIsland({ open, onSelect, onClose }: CommandIslandProps) {
                 aria-label="Command island"
                 onClick={e => e.stopPropagation()}
             >
-                {ISLAND_ITEMS.map((item, i) => (
-                    <button
-                        key={item.action}
-                        role="menuitem"
-                        className={`command-island-item${i === focusIdx ? " focused" : ""}${item.inert ? " inert" : ""}`}
-                        onMouseEnter={() => setFocusIdx(i)}
-                        onClick={() => !item.inert && onSelect(item.action)}
-                        aria-label={item.label}
-                        title={item.inert ? `${item.label} (coming soon)` : item.label}
-                        disabled={item.inert}
-                    >
-                        <span aria-hidden="true">{item.icon}</span>
-                    </button>
-                ))}
+                {ISLAND_ITEMS.map((item, i) => {
+                    const Icon = item.icon;
+                    return (
+                        <button
+                            key={item.action}
+                            role="menuitem"
+                            className={`command-island-item${i === focusIdx ? " focused" : ""}${item.inert ? " inert" : ""}`}
+                            onMouseEnter={() => setFocusIdx(i)}
+                            onClick={() => !item.inert && onSelect(item.action)}
+                            aria-label={item.label}
+                            title={item.inert ? `${item.label} (coming soon)` : item.label}
+                            disabled={item.inert}
+                        >
+                            <Icon />
+                        </button>
+                    );
+                })}
             </motion.div>
         </div>
     );
