@@ -12,8 +12,8 @@
   --void:      #000000;
   --surface-0: #080b08;
   --surface-1: #0e130e;
-  --surface-2: #141a14;
-  --surface-3: #1c251c;
+  --surface-2: #161d16;
+  --surface-3: #212c21;
 
   /* Accents — one color, forest green */
   --leaf-dim:    #2a4a2e;
@@ -40,6 +40,7 @@
   --glow-sm:      0 0 10px rgba(106, 184, 112, 0.18);
   --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.55);
   --shadow-float: 0 24px 72px rgba(0, 0, 0, 0.85);
+  --glow-focus:   0 0 0 1px rgba(106, 184, 112, 0.35), 0 0 16px rgba(106, 184, 112, 0.12);
 
   /* Typography */
   --font-ui:   'Inter', -apple-system, 'Segoe UI', sans-serif;
@@ -877,7 +878,7 @@ input, textarea {
 
 .dw-input-box:focus-within {
   border-color: rgba(106, 184, 112, 0.22);
-  box-shadow: 0 0 0 3px rgba(106, 184, 112, 0.05);
+  box-shadow: var(--glow-focus);
 }
 
 .dw-input-box.offline { opacity: 0.45; pointer-events: none; }
