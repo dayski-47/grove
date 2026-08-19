@@ -1,10 +1,16 @@
+export function BellGlyph() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12.5 3c3.6 0.4 5.7 3.2 5.3 7.7c-0.2 3.1 0.9 4.9 2.4 6.3h-15.4c1.6-1.5 2.6-3.3 2.4-6.6c-0.3-4.2 2.1-7 5.3-7.4z"/>
+            <circle cx="11" cy="19.3" r="1.15"/>
+        </svg>
+    );
+}
+
 export function BellIcon({ count }: { count: number }) {
     return (
         <div className="dw-bell-wrap">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-            </svg>
+            <BellGlyph />
             {count > 0 && (
                 <span className="dw-bell-badge" aria-hidden="true">
                     {count > 99 ? "99+" : count}
