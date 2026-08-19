@@ -520,6 +520,7 @@ input, textarea {
   font-size: 10px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
@@ -2014,6 +2015,8 @@ input, textarea {
 }
 
 .pane-chrome-pill-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-muted);
