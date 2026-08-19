@@ -1,5 +1,5 @@
 /* Grove — Darkwood Design System V2 */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* ============================================================
    RESET & BASE
@@ -43,7 +43,7 @@
 
   /* Typography */
   --font-ui:   'Inter', -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'Geist Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
 
   /* Scale */
   --text-xs:   11px;
