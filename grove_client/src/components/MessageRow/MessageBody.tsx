@@ -69,9 +69,9 @@ export function MessageBody({
                         <span className="dw-edit-hint">Enter to save · Esc to cancel</span>
                     </div>
                 ) : (
-                    <span className="dw-msg-text">
+                    <div className="dw-msg-text">
                         {parseMarkdown(m.text, myUsername)}
-                    </span>
+                    </div>
                 )}
                 {m.edited && !m.deleted && !isEditing && (
                     <span className="dw-msg-edited-tag">(edited)</span>

@@ -570,6 +570,32 @@ input, textarea {
   color: var(--leaf-bright);
 }
 
+.dw-code-block {
+  display: block;
+  margin: var(--sp-2) 0;
+  padding: var(--sp-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+}
+
+.dw-code-block code {
+  font-family: var(--font-mono);
+  font-size: 0.83em;
+  color: var(--text-primary);
+  white-space: pre;
+}
+
+.dw-code-block-lang {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+  text-transform: lowercase;
+}
+
 /* ── Toast notifications ─────────────────────────────────── */
 
 .gv-toast-container {

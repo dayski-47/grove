@@ -42,6 +42,7 @@ export function formatTime(ts: number): string {
 type Check = { regex: RegExp; type: string };
 
 const CHECKS: Check[] = [
+    { regex: /```(\w*)\n(.*?)```/s, type: "codeblock" },
     { regex: /\*\*(.+?)\*\*/s, type: "bold"    },
     { regex: /~~(.+?)~~/s,     type: "strike"  },
     { regex: /\*(.+?)\*/s,     type: "italic"  },
@@ -71,10 +72,25 @@ export function parseMarkdown(text: string, myUsername: string): ReactNode[] {
         if (earliest.index > 0) nodes.push(remaining.slice(0, earliest.index));
 
         const { type, match } = earliest;
+        let consumedLength = match[0].length;
+
         if (type === "bold")    nodes.push(<strong key={key++}>{match[1]}</strong>);
         else if (type === "strike")  nodes.push(<del key={key++}>{match[1]}</del>);
         else if (type === "italic")  nodes.push(<em key={key++}>{match[1]}</em>);
         else if (type === "code")    nodes.push(<code key={key++} className="dw-code-inline">{match[1]}</code>);
+        else if (type === "codeblock") {
+            const lang = match[1];
+            // The fence regex's non-greedy group always captures the newline
+            // immediately before the closing ``` as part of the content —
+            // that separator isn't part of the code, so drop it.
+            const code = match[2].replace(/\n$/, "");
+            nodes.push(
+                <pre key={key++} className="dw-code-block">
+                    {lang && <span className="dw-code-block-lang">{lang}</span>}
+                    <code>{code}</code>
+                </pre>
+            );
+        }
         else if (type === "mention") {
             const name = match[1];
             const isMe = name.toLowerCase() === myUsername.toLowerCase();
@@ -82,7 +98,7 @@ export function parseMarkdown(text: string, myUsername: string): ReactNode[] {
         }
         else if (type === "newline") nodes.push(<br key={key++} />);
 
-        remaining = remaining.slice(earliest.index + match[0].length);
+        remaining = remaining.slice(earliest.index + consumedLength);
     }
 
     return nodes;
