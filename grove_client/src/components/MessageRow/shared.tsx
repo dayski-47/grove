@@ -76,7 +76,7 @@ function isSafeUrl(url: string): boolean {
 type Check = { regex: RegExp; type: string };
 
 const CHECKS: Check[] = [
-    { regex: /```(\w*)\n(.*?)```/s, type: "codeblock" },
+    { regex: /```([^\n]*)\n([\s\S]*?)```/, type: "codeblock" },
     { regex: /\*\*(.+?)\*\*/s, type: "bold"    },
     { regex: /~~(.+?)~~/s,     type: "strike"  },
     { regex: /\*(.+?)\*/s,     type: "italic"  },
@@ -114,7 +114,7 @@ export function parseMarkdown(text: string, myUsername: string): ReactNode[] {
         else if (type === "italic")  nodes.push(<em key={key++}>{match[1]}</em>);
         else if (type === "code")    nodes.push(<code key={key++} className="dw-code-inline">{match[1]}</code>);
         else if (type === "codeblock") {
-            const lang = match[1];
+            const lang = match[1].trim();
             // The fence regex's non-greedy group always captures the newline
             // immediately before the closing ``` as part of the content —
             // that separator isn't part of the code, so drop it.

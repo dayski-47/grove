@@ -120,3 +120,31 @@ describe("parseMarkdown — auto-linkify URLs", () => {
         expect(nodes).toEqual(["visit javascript:alert(1) now"]);
     });
 });
+
+describe("parseMarkdown — cross-feature interactions", () => {
+    it("links a URL and renders a fence in the same message", () => {
+        const nodes = parseMarkdown("see https://example.com ```js\ncode\n``` end", "alice");
+        expect((nodes[1] as any).type).toBe("a");
+        expect((nodes[3] as any).type).toBe("pre");
+    });
+
+    it("does not let bold markers inside a URL split the link", () => {
+        const nodes = parseMarkdown("https://example.com/**a**b", "alice");
+        expect((nodes[0] as any).props.href).toBe("https://example.com/**a**b");
+    });
+
+    it("leaves a URL inside inline code unlinked", () => {
+        const nodes = parseMarkdown("`https://example.com`", "alice");
+        expect((nodes[0] as any).type).toBe("code");
+    });
+
+    it("accepts a language tag containing non-word characters like c++", () => {
+        const nodes = parseMarkdown("```c++\nint x;\n```", "alice");
+        const pre = nodes[0] as any;
+        expect(pre.type).toBe("pre");
+        const langEl = pre.props.children[0];
+        expect(langEl.props.children).toBe("c++");
+        const codeEl = pre.props.children[1];
+        expect(codeEl.props.children).toBe("int x;");
+    });
+});

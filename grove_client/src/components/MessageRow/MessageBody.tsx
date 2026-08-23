@@ -71,10 +71,8 @@ export function MessageBody({
                 ) : (
                     <div className="dw-msg-text">
                         {parseMarkdown(m.text, myUsername)}
+                        {m.edited && <span className="dw-msg-edited-tag">(edited)</span>}
                     </div>
-                )}
-                {m.edited && !m.deleted && !isEditing && (
-                    <span className="dw-msg-edited-tag">(edited)</span>
                 )}
             </div>
 
