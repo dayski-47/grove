@@ -39,6 +39,7 @@ import { CallInline } from "./appshell/CallInline";
 import { ProfileDrawer } from "./appshell/ProfileDrawer";
 import { NotifPanel } from "./appshell/NotifPanel";
 import { ToastContainer, type Toast } from "./appshell/ToastContainer";
+import { ConnectionBanner } from "./appshell/ConnectionBanner";
 
 // Lazy-loaded: both are only ever needed after the user navigates to Friends
 // or opens channel Settings, so they shouldn't be in the initial bundle.
@@ -1265,6 +1266,8 @@ export function AppShell({
                     </div>
                 </header>
             )}
+
+            <ConnectionBanner connected={connected} />
 
             {/* ── Content ─────────────────────────────── */}
             <main className="dw-content" aria-label="Main content">

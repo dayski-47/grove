@@ -1601,6 +1601,33 @@ input, textarea {
   z-index: var(--z-panel);
 }
 
+.dw-connection-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  height: 32px;
+  flex-shrink: 0;
+  background: rgba(160, 128, 48, 0.12);
+  border-bottom: 1px solid rgba(160, 128, 48, 0.25);
+  color: var(--warn);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.dw-connection-banner-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  animation: dw-connection-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dw-connection-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.75); }
+}
+
 /* Right side actions */
 .dw-topbar-actions {
   display: flex;

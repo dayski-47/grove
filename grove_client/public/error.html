@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grove — Connection Trouble</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    background: #000;
+    color: #e2ebe3;
+    font-family: -apple-system, "Segoe UI", Inter, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+  }
+  .wrap { max-width: 420px; }
+  h1 {
+    font-size: 22px;
+    font-weight: 500;
+    margin: 0 0 12px;
+    color: #e2ebe3;
+  }
+  p {
+    color: #7a9480;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 0 0 24px;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #a08030;
+    margin: 0 auto 20px;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.4; transform: scale(0.75); }
+  }
+  a {
+    color: #6ab870;
+    font-size: 14px;
+    text-decoration: none;
+    border: 1px solid rgba(106,184,112,0.3);
+    padding: 8px 20px;
+    border-radius: 6px;
+    display: inline-block;
+    transition: background 0.15s;
+  }
+  a:hover { background: rgba(106,184,112,0.08); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="dot"></div>
+    <h1>Grove's having some trouble</h1>
+    <p>The server didn't respond. This is usually temporary — try again in a moment.</p>
+    <a href="/">Try again</a>
+  </div>
+</body>
+</html>
