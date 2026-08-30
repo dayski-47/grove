@@ -33,8 +33,10 @@
 - Modify: `chat_server/Cargo.toml`
 
 **Interfaces:**
-- Produces: `pub fn is_public_ip(ip: std::net::IpAddr) -> bool`, `pub fn is_url_host_safe(url: &url::Url) -> bool`, `pub struct SsrfSafeResolver`, `pub fn build_http_client() -> reqwest::Client`
+- Produces: `pub fn is_public_ip(ip: std::net::IpAddr) -> bool`, `pub fn is_url_host_safe(url: &url::Url) -> bool`, `pub struct SsrfSafeResolver`, `pub fn build_http_client() -> reqwest::Client`, `pub async fn get_checked(client: &reqwest::Client, url: &str) -> Result<reqwest::Response, GetCheckedError>`, `#[derive(Debug)] pub enum GetCheckedError { InvalidUrl, Blocked, Request(reqwest::Error) }`
 - Consumes: nothing new
+
+**Post-review correction (found by the Task 1 code reviewer, not caught while planning):** `build_http_client()`'s resolver and redirect policy protect hostnames and redirects, but a *direct* request to a literal-IP URL through the raw client (`client.get(url).send()`) is still completely unprotected — the resolver never runs for that case at all, on the first request just as much as on a redirect. Relying on every future caller to remember to call `is_url_host_safe()` themselves before using the raw client is exactly the kind of thing that gets forgotten. `get_checked()` below is the fix: the *only* sanctioned way to send a request through this client for an attacker-influenced URL, checking then sending in one call. Task 2's `fetch_capped` calls this instead of touching `client.get()` directly.
 
 - [ ] **Step 1: Add the `reqwest` dependency**
 
@@ -156,11 +158,10 @@ fn is_public_ipv6(ip: Ipv6Addr) -> bool {
     true
 }
 
-/// A DNS resolver that filters every answer to public IPs only. Installed as
-/// the client's *only* resolution path — reqwest connects to exactly what
-/// this returns, so there's no gap between "checked" and "connected" for a
-/// DNS-rebinding attack to exploit, and every redirect hop re-resolves
-/// through this same filter automatically.
+/// A DNS resolver that filters every answer to public IPs only — protects
+/// hostname-based requests and DNS rebinding. Does NOT run for a URL whose
+/// host is already a literal IP (nothing to resolve); `get_checked` below
+/// covers that case, which this resolver structurally cannot.
 #[derive(Clone)]
 pub struct SsrfSafeResolver;
 
@@ -192,11 +193,19 @@ pub fn is_url_host_safe(url: &Url) -> bool {
 
 /// Shared client for link unfurling and image proxying. Build once at
 /// startup and clone (cheap — internally `Arc`-backed) into `AppState`.
+///
+/// **Do not call `.get(url).send()` on this client directly for any
+/// caller-supplied URL — it does not block a direct request to a literal
+/// IP on its own.** Always go through `get_checked` below (or a wrapper
+/// that itself calls it, like Task 2's `fetch_capped`).
 pub fn build_http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .dns_resolver(Arc::new(SsrfSafeResolver))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= 3 {
+            // previous() already includes the current hop before this check
+            // runs, so `> 3` (not `>= 3`) is what actually allows exactly 3
+            // hops — verified against reqwest's own Policy::limited semantics.
+            if attempt.previous().len() > 3 {
                 return attempt.stop();
             }
             if is_url_host_safe(attempt.url()) {
@@ -210,6 +219,25 @@ pub fn build_http_client() -> reqwest::Client {
         .build()
         .expect("failed to build SSRF-safe http client")
 }
+
+#[derive(Debug)]
+pub enum GetCheckedError {
+    InvalidUrl,
+    Blocked,
+    Request(reqwest::Error),
+}
+
+/// The only sanctioned way to send a request through this client for a
+/// caller-supplied URL — checks the target host, including the literal-IP
+/// case the resolver can't see, before ever connecting. `build_http_client`
+/// alone is not sufficient; this is the actual safe primitive.
+pub async fn get_checked(client: &reqwest::Client, url: &str) -> Result<reqwest::Response, GetCheckedError> {
+    let parsed = Url::parse(url).map_err(|_| GetCheckedError::InvalidUrl)?;
+    if !is_url_host_safe(&parsed) {
+        return Err(GetCheckedError::Blocked);
+    }
+    client.get(url).send().await.map_err(GetCheckedError::Request)
+}
 ```
 
 - [ ] **Step 6: Run the tests to verify they pass**
@@ -217,31 +245,50 @@ pub fn build_http_client() -> reqwest::Client {
 Run: `cargo test net::ssrf -- --nocapture`
 Expected: PASS (both tests)
 
-- [ ] **Step 7: Add an integration test — the resolver actually blocks a live loopback fetch**
+- [ ] **Step 7: Add integration tests — literal-IP direct requests, redirects, and the hop cap**
 
-Append to the `#[cfg(test)] mod tests` block (needs `#[tokio::test]`, and `axum` is already a dependency for the throwaway local server):
+Append to the `#[cfg(test)] mod tests` block (needs `#[tokio::test]`, and `axum` is already a dependency for the throwaway local servers):
 
 ```rust
     #[tokio::test]
-    async fn refuses_to_fetch_a_literal_loopback_ip() {
+    async fn get_checked_refuses_a_literal_loopback_ip() {
         let app = axum::Router::new()
             .route("/", axum::routing::get(|| async { "should never be reached" }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
 
-        // The URL itself is the literal IP — this is the case the resolver
-        // alone cannot catch, since there's nothing to resolve.
-        let url = format!("http://{}/", addr);
-        assert!(!is_url_host_safe(&Url::parse(&url).unwrap()));
-
+        // The URL itself is the literal IP — the case the resolver alone
+        // cannot catch (nothing to resolve). get_checked, not the raw
+        // client, is what must block this.
         let client = build_http_client();
-        let result = client.get(&url).send().await;
-        assert!(result.is_err(), "fetching a literal loopback IP must be blocked");
+        let result = get_checked(&client, &format!("http://{}/", addr)).await;
+        assert!(matches!(result, Err(GetCheckedError::Blocked)));
     }
 
     #[tokio::test]
-    async fn refuses_to_follow_a_redirect_to_a_literal_loopback_ip() {
+    async fn raw_client_alone_does_not_block_a_literal_ip_by_design() {
+        // Pins the actual, load-bearing contract: build_http_client()'s
+        // client is not itself SSRF-safe for a caller-supplied URL — only
+        // get_checked (or a wrapper built on it, like Task 2's
+        // fetch_capped) is. If this test ever starts failing because the
+        // raw client now blocks loopback on its own, that's a genuine
+        // reqwest/hyper behavior change worth knowing about, not a bug to
+        // "fix" back — it would mean this test (and its documentation
+        // comment on build_http_client) need updating, not reverting.
+        let app = axum::Router::new()
+            .route("/", axum::routing::get(|| async { "reached — as documented" }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+
+        let client = build_http_client();
+        let result = client.get(format!("http://{}/", addr)).send().await;
+        assert!(result.is_ok(), "documents that the raw client does not self-protect — use get_checked");
+    }
+
+    #[tokio::test]
+    async fn get_checked_refuses_to_follow_a_redirect_to_a_literal_loopback_ip() {
         let app = axum::Router::new().route(
             "/go",
             axum::routing::get(|| async {
@@ -253,15 +300,42 @@ Append to the `#[cfg(test)] mod tests` block (needs `#[tokio::test]`, and `axum`
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
 
         let client = build_http_client();
-        let result = client.get(format!("http://{}/go", addr)).send().await;
-        assert!(result.is_err(), "a redirect landing on a literal loopback IP must be blocked");
+        let result = get_checked(&client, &format!("http://{}/go", addr)).await;
+        assert!(matches!(result, Err(GetCheckedError::Request(_))), "the redirect itself must fail, not just report unavailable");
+    }
+
+    #[tokio::test]
+    async fn allows_exactly_three_redirect_hops_and_stops_at_a_fourth() {
+        // Four chained redirects, each to the next hop. reqwest's
+        // Policy::stop() (unlike .error()) returns Ok with the last
+        // successfully-fetched response rather than an Err — verified
+        // directly — so the assertion here is "stopped at hop4, /hop5
+        // was never reached", not "the request failed".
+        let app = axum::Router::new()
+            .route("/hop1", axum::routing::get(|| async { axum::response::Redirect::temporary("/hop2") }))
+            .route("/hop2", axum::routing::get(|| async { axum::response::Redirect::temporary("/hop3") }))
+            .route("/hop3", axum::routing::get(|| async { axum::response::Redirect::temporary("/hop4") }))
+            .route("/hop4", axum::routing::get(|| async { axum::response::Redirect::temporary("/hop5") }))
+            .route("/hop5", axum::routing::get(|| async { "should never be reached — that's the 4th hop" }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+
+        let client = build_http_client();
+        let result = get_checked(&client, &format!("http://{}/hop1", addr)).await.unwrap();
+        assert!(result.status().is_redirection(), "must stop on an un-followed redirect, not a 200");
+        assert!(
+            result.url().path() == "/hop4",
+            "must stop exactly at hop4 (3 hops followed: 1->2, 2->3, 3->4), got {}",
+            result.url().path()
+        );
     }
 ```
 
 - [ ] **Step 8: Run it to verify it passes**
 
 Run: `cargo test net::ssrf -- --nocapture`
-Expected: PASS (all 4 tests)
+Expected: PASS (all 6 tests: 2 unit + 4 integration)
 
 - [ ] **Step 9: Wire the module into the crate**
 
@@ -287,7 +361,7 @@ git commit -m "feat: ssrf-safe http client for outbound link fetches"
 - Modify: `chat_server/Cargo.toml`
 
 **Interfaces:**
-- Consumes: Task 1's `net::ssrf::is_url_host_safe` — the resolver alone doesn't cover a literal-IP URL (see Global Constraints), so this function must check the URL itself before ever sending
+- Consumes: Task 1's `net::ssrf::get_checked` — the *only* sanctioned way to send a request through the SSRF-safe client; this task must not call `client.get(url).send()` itself
 - Produces: `pub const MAX_FETCH_BYTES: usize`, `pub struct CappedFetch { pub body: bytes::Bytes, pub content_type: Option<String> }`, `pub async fn fetch_capped(client: &reqwest::Client, url: &str, max_bytes: usize) -> Result<CappedFetch, FetchError>`
 
 - [ ] **Step 1: Add `futures-util`'s stream extension (already a dependency) and write the failing test**
@@ -313,14 +387,13 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
 
-        // Calls the unchecked inner helper directly, on a plain client —
-        // this test is about the capping logic, not SSRF policy (that's
-        // covered on its own in net::ssrf, and by fetch_capped's own test
-        // below). fetch_capped itself always rejects a loopback target
-        // before ever sending, so testing capping through it would require
-        // a real public server.
+        // Gets a real Response directly (bypassing get_checked, which would
+        // refuse a loopback target) — this test is purely about the
+        // capping logic. SSRF policy is Task 1's job, already covered
+        // there; fetch_capped's own test below covers the wiring.
         let client = reqwest::Client::new();
-        let result = fetch_capped_inner(&client, &format!("http://{}/huge", addr), 2 * 1024 * 1024).await;
+        let resp = client.get(format!("http://{}/huge", addr)).send().await.unwrap();
+        let result = cap_response(resp, 2 * 1024 * 1024).await;
         assert!(matches!(result, Err(FetchError::TooLarge)));
     }
 
@@ -335,18 +408,18 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
 
         let client = reqwest::Client::new();
-        let result = fetch_capped_inner(&client, &format!("http://{}/small", addr), 2 * 1024 * 1024)
-            .await
-            .unwrap();
+        let resp = client.get(format!("http://{}/small", addr)).send().await.unwrap();
+        let result = cap_response(resp, 2 * 1024 * 1024).await.unwrap();
         assert_eq!(result.body.as_ref(), b"<title>tiny</title>");
         assert_eq!(result.content_type.as_deref(), Some("text/html"));
     }
 
     #[tokio::test]
     async fn fetch_capped_rejects_a_loopback_target_before_sending() {
-        // The public entry point — unlike fetch_capped_inner above, this
-        // must refuse a loopback URL outright, matching Task 1's
-        // is_url_host_safe (the resolver never even runs for a literal IP).
+        // The public entry point — unlike cap_response above, this must
+        // refuse a loopback URL outright, via Task 1's get_checked (the
+        // resolver never even runs for a literal IP, so this check is the
+        // only thing standing between this call and a real connection).
         let client = reqwest::Client::new();
         let result = fetch_capped(&client, "http://127.0.0.1:1/nope", 2 * 1024 * 1024).await;
         assert!(matches!(result, Err(FetchError::Blocked)));
@@ -364,7 +437,7 @@ Expected: FAIL — nothing defined yet.
 Add above the test module:
 
 ```rust
-use crate::net::ssrf::is_url_host_safe;
+use crate::net::ssrf::{GetCheckedError, get_checked};
 use bytes::Bytes;
 use futures_util::StreamExt;
 
@@ -382,38 +455,26 @@ pub enum FetchError {
     Blocked,
 }
 
-impl From<reqwest::Error> for FetchError {
-    fn from(e: reqwest::Error) -> Self {
-        FetchError::Request(e)
-    }
-}
-
-/// The only entry point production code should call — checks the URL is
-/// safe to fetch before ever sending. Task 1's resolver alone doesn't cover
-/// a literal-IP URL (nothing to resolve), so this check is load-bearing,
-/// not redundant with it.
+/// The only entry point production code should call. Gets the response via
+/// Task 1's get_checked (the actual SSRF enforcement — see net::ssrf's
+/// docs on why the raw client alone isn't safe to use here), then caps it.
 pub async fn fetch_capped(
     client: &reqwest::Client,
     url: &str,
     max_bytes: usize,
 ) -> Result<CappedFetch, FetchError> {
-    let parsed = reqwest::Url::parse(url).map_err(|_| FetchError::Blocked)?;
-    if !is_url_host_safe(&parsed) {
-        return Err(FetchError::Blocked);
-    }
-    fetch_capped_inner(client, url, max_bytes).await
+    let resp = get_checked(client, url).await.map_err(|e| match e {
+        GetCheckedError::InvalidUrl | GetCheckedError::Blocked => FetchError::Blocked,
+        GetCheckedError::Request(err) => FetchError::Request(err),
+    })?;
+    cap_response(resp, max_bytes).await
 }
 
-/// The actual streaming/capping logic, with no safety check of its own —
-/// exists so tests can exercise it directly against a loopback mock
-/// server without fighting the SSRF check that a real caller always goes
-/// through via fetch_capped above.
-async fn fetch_capped_inner(
-    client: &reqwest::Client,
-    url: &str,
-    max_bytes: usize,
-) -> Result<CappedFetch, FetchError> {
-    let resp = client.get(url).send().await?;
+/// The actual streaming/capping logic, operating on an already-obtained
+/// Response — has no URL or safety check of its own, so tests can exercise
+/// it directly against a loopback mock server's response without fighting
+/// the SSRF check that fetch_capped always applies first.
+async fn cap_response(resp: reqwest::Response, max_bytes: usize) -> Result<CappedFetch, FetchError> {
     let content_type = resp
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -423,7 +484,7 @@ async fn fetch_capped_inner(
     let mut stream = resp.bytes_stream();
     let mut buf = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
+        let chunk = chunk.map_err(FetchError::Request)?;
         buf.extend_from_slice(&chunk);
         if buf.len() > max_bytes {
             return Err(FetchError::TooLarge);
@@ -1918,6 +1979,6 @@ git commit -m "feat: render link preview cards in messages"
 
 **Placeholder scan:** the only non-final code in this plan is Task 5 Step 1's intentional `unimplemented!()` stub, which Step 3 immediately replaces with real assertions — flagged inline as deliberate, not a leftover.
 
-**Type consistency:** `UnfurlResponse` (Rust, Task 6) and `UnfurlResult` (TS, Task 9) fields match 1:1 (`available`, `url_hash`, `title`, `description`, `has_image`). `ImageProxyParams.url_hash` (Task 7) matches the `url_hash` query param `imageProxyUrl` (Task 9) constructs. `AuthenticatedUser { user_id: i64 }` (Task 5) matches every call site across Tasks 6/7. `ParsedPreview { title, description, image_url }` (Task 3) matches the fields `fetch_and_parse` (Task 6) reads. `CappedFetch { body, content_type }` (Task 2) matches both consumers (Tasks 6, 7); both call the checked public `fetch_capped`, never `fetch_capped_inner`, so both automatically inherit the literal-IP safety check.
+**Type consistency:** `UnfurlResponse` (Rust, Task 6) and `UnfurlResult` (TS, Task 9) fields match 1:1 (`available`, `url_hash`, `title`, `description`, `has_image`). `ImageProxyParams.url_hash` (Task 7) matches the `url_hash` query param `imageProxyUrl` (Task 9) constructs. `AuthenticatedUser { user_id: i64 }` (Task 5) matches every call site across Tasks 6/7. `ParsedPreview { title, description, image_url }` (Task 3) matches the fields `fetch_and_parse` (Task 6) reads. `CappedFetch { body, content_type }` (Task 2) matches both consumers (Tasks 6, 7); both call the checked public `fetch_capped`, which always routes through Task 1's `get_checked`, so both automatically inherit the literal-IP safety check rather than each needing to remember it themselves.
 
-**Post-dispatch correction (found during Task 1's own execution, not during this review):** the original plan text here said the resolver alone covers redirects — that's true for hostnames but false for a URL whose host is already a literal IP (no resolution ever happens for one). Fixed in Task 1 (`is_url_host_safe`, a custom `redirect::Policy` instead of `Policy::limited`) and propagated into Task 2 (`fetch_capped` checks the URL before ever calling `fetch_capped_inner`). See the ledger for the verification that caught this and confirmed the fix.
+**Post-dispatch corrections (found during Task 1's own execution and its task review, not during initial planning):** two rounds. First, the original plan text said the resolver alone covers redirects — true for hostnames, false for a URL whose host is already a literal IP (no resolution ever happens for one); fixed with `is_url_host_safe` and a custom `redirect::Policy`. Second, the task reviewer found that fix still left a *direct* request to a literal IP through the raw client completely unprotected (the check only ran for redirect hops) — fixed by centralizing enforcement into `get_checked`, the one sanctioned way to send any request through this client, with `build_http_client()`'s own client explicitly documented and tested as *not* safe to use directly. Task 2's `fetch_capped` was redesigned around this: it calls `get_checked` (never touches `client.get()` itself), with the capping logic split into a separate `cap_response` so tests can still exercise it against a loopback mock server. See the ledger for the full verification trail.
