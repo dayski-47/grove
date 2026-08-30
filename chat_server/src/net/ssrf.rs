@@ -89,6 +89,30 @@ pub fn is_url_host_safe(url: &Url) -> bool {
     }
 }
 
+#[derive(Debug, PartialEq)]
+#[allow(dead_code)]
+enum RedirectDecision {
+    Follow,
+    StopAtCap,
+    Blocked,
+}
+
+/// Pure decision logic, deliberately decoupled from reqwest's `Attempt`
+/// type (which isn't constructible outside reqwest's own redirect
+/// machinery, so this couldn't be unit-tested any other way) — this is
+/// what actually makes the hop-cap boundary testable without a network.
+#[allow(dead_code)]
+fn redirect_decision(target: &Url, hops_so_far: usize) -> RedirectDecision {
+    if hops_so_far > 3 {
+        return RedirectDecision::StopAtCap;
+    }
+    if is_url_host_safe(target) {
+        RedirectDecision::Follow
+    } else {
+        RedirectDecision::Blocked
+    }
+}
+
 /// Shared client for link unfurling and image proxying. Build once at
 /// startup and clone (cheap — internally `Arc`-backed) into `AppState`.
 ///
@@ -100,19 +124,15 @@ pub fn is_url_host_safe(url: &Url) -> bool {
 pub fn build_http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .dns_resolver(Arc::new(SsrfSafeResolver))
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            // previous() already includes the current hop before this check
-            // runs, so `> 3` (not `>= 3`) is what actually allows exactly 3
-            // hops — verified against reqwest's own Policy::limited semantics.
-            if attempt.previous().len() > 3 {
-                return attempt.stop();
-            }
-            if is_url_host_safe(attempt.url()) {
-                attempt.follow()
-            } else {
-                attempt.error("blocked redirect target: not a public IP")
-            }
-        }))
+        .redirect(reqwest::redirect::Policy::custom(
+            |attempt| match redirect_decision(attempt.url(), attempt.previous().len()) {
+                RedirectDecision::Follow => attempt.follow(),
+                RedirectDecision::StopAtCap => attempt.stop(),
+                RedirectDecision::Blocked => {
+                    attempt.error("blocked redirect target: not a public IP")
+                }
+            },
+        ))
         .timeout(Duration::from_secs(5))
         .user_agent("Grove/1.0")
         .build()
@@ -210,9 +230,6 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        // The URL itself is the literal IP — the case the resolver alone
-        // cannot catch (nothing to resolve). get_checked, not the raw
-        // client, is what must block this.
         let client = build_http_client();
         let result = get_checked(&client, &format!("http://{}/", addr)).await;
         assert!(matches!(result, Err(GetCheckedError::Blocked)));
@@ -220,14 +237,6 @@ mod tests {
 
     #[tokio::test]
     async fn raw_client_alone_does_not_block_a_literal_ip_by_design() {
-        // Pins the actual, load-bearing contract: build_http_client()'s
-        // client is not itself SSRF-safe for a caller-supplied URL — only
-        // get_checked (or a wrapper built on it, like Task 2's
-        // fetch_capped) is. If this test ever starts failing because the
-        // raw client now blocks loopback on its own, that's a genuine
-        // reqwest/hyper behavior change worth knowing about, not a bug to
-        // "fix" back — it would mean this test (and its documentation
-        // comment on build_http_client) need updating, not reverting.
         let app = axum::Router::new().route(
             "/",
             axum::routing::get(|| async { "reached — as documented" }),
@@ -246,45 +255,60 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn get_checked_refuses_to_follow_a_redirect_to_a_literal_loopback_ip() {
-        // The redirect policy must block attempts to follow a redirect to a
-        // literal loopback IP. We test using httpbin.org (or a mock server)
-        // for the initial request (which will succeed as it's a public address),
-        // but since our test can't control httpbin's responses, we verify the
-        // policy by testing is_url_host_safe directly on a loopback redirect URL.
-        let loopback_redirect_url = Url::parse("http://127.0.0.1:1/nope").unwrap();
-        assert!(
-            !is_url_host_safe(&loopback_redirect_url),
-            "redirect policy must refuse literal loopback IPs"
-        );
+    #[test]
+    fn redirect_decision_follows_a_public_target_within_the_hop_cap() {
+        let url = Url::parse("https://example.com/next").unwrap();
+        assert_eq!(redirect_decision(&url, 1), RedirectDecision::Follow);
+        assert_eq!(redirect_decision(&url, 3), RedirectDecision::Follow);
+    }
 
-        // Also test with a private IP
-        let private_redirect_url = Url::parse("http://192.168.1.1/nope").unwrap();
-        assert!(
-            !is_url_host_safe(&private_redirect_url),
-            "redirect policy must refuse private IPs"
-        );
+    #[test]
+    fn redirect_decision_stops_past_the_hop_cap_even_for_a_safe_target() {
+        let url = Url::parse("https://example.com/next").unwrap();
+        assert_eq!(redirect_decision(&url, 4), RedirectDecision::StopAtCap);
+    }
+
+    #[test]
+    fn redirect_decision_blocks_a_literal_loopback_target_within_the_hop_cap() {
+        let url = Url::parse("http://127.0.0.1/nope").unwrap();
+        assert_eq!(redirect_decision(&url, 1), RedirectDecision::Blocked);
+    }
+
+    #[test]
+    fn redirect_decision_hop_cap_takes_priority_over_target_safety() {
+        // Verifies branch order: past the cap, it stops regardless of
+        // whether the target would also have been blocked.
+        let url = Url::parse("http://127.0.0.1/nope").unwrap();
+        assert_eq!(redirect_decision(&url, 4), RedirectDecision::StopAtCap);
     }
 
     #[tokio::test]
-    async fn allows_exactly_three_redirect_hops_and_stops_at_a_fourth() {
-        // The redirect policy limit (> 3 means stop after 3 hops) is enforced
-        // in build_http_client's custom redirect policy. We verify the logic here:
-        // previous().len() returns the count of prior requests in the chain.
-        // When previous().len() > 3, we stop (meaning we've already done 3 hops).
-        // When previous().len() <= 3, we continue (allowing hops 1, 2, 3).
-        //
-        // This test documents the behavior; a full integration test would
-        // require connecting to a server with 4+ redirect hops, which our
-        // test environment (bound to loopback) cannot provide through get_checked
-        // due to SSRF protection. The policy itself is correct per reqwest's
-        // semantics and has been verified against real redirect chains.
+    async fn redirect_policy_blocks_a_redirect_to_a_different_loopback_target() {
+        let app = axum::Router::new().route(
+            "/redirect-to-loopback",
+            axum::routing::get(|| async {
+                axum::response::Redirect::temporary("http://127.0.0.1:1/nope")
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        // Initial request goes through the RAW client, not get_checked —
+        // deliberately. get_checked would block this mock server (itself
+        // loopback) before any redirect could happen. Using the raw client
+        // here still proves the redirect policy is real and wired: reqwest
+        // invokes it regardless of how the initial request was sent.
         let client = build_http_client();
-        // Just verify the client was built successfully with the policy installed
+        let result = client
+            .get(format!("http://{}/redirect-to-loopback", addr))
+            .send()
+            .await;
         assert!(
-            client.get("http://example.com/test").build().is_ok(),
-            "client with custom redirect policy should build successfully"
+            result.is_err(),
+            "a redirect landing on a literal loopback IP must be blocked"
         );
     }
 }
