@@ -35,11 +35,27 @@ pub async fn run_websocket_server(
             let uid_clone = Arc::clone(&user_id);
             let exp_clone = Arc::clone(&user_exp);
             let secret = app_state.jwt_secret.clone();
+            let allowed_origins = app_state.allowed_origins.clone();
 
             #[allow(clippy::collapsible_if, clippy::result_large_err)]
             let ws_result = tokio_tungstenite::accept_hdr_async(
                 stream,
                 move |req: &Request, response: Response| {
+                    // Only reject a *present* Origin that isn't allowlisted — browsers
+                    // always send it, non-browser tooling often doesn't, and the auth
+                    // boundary is still the JWT below either way.
+                    let origin_ok = req
+                        .headers()
+                        .get("origin")
+                        .and_then(|v| v.to_str().ok())
+                        .is_none_or(|origin| allowed_origins.iter().any(|o| o == origin));
+                    if !origin_ok {
+                        return Err(tokio_tungstenite::tungstenite::http::Response::builder()
+                            .status(403)
+                            .body(Some("Forbidden".to_string()))
+                            .unwrap());
+                    }
+
                     let query = req.uri().query().unwrap_or("");
                     let token = query
                         .split('&')

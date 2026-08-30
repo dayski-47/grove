@@ -1,5 +1,6 @@
 mod api;
 mod cache;
+mod config;
 mod database;
 mod memory;
 mod protocol;
@@ -35,6 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let presence = cache::presence::PresenceTracker::new(redis_conn.clone());
     let roles = cache::roles::RoleCache::new(redis_conn.clone());
     let subscribers = memory::subscribers::ChannelSubscribers::new();
+    let allowed_origins = config::allowed_origins();
 
     let app_state = api::AppState {
         db: db_pool,
@@ -43,6 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         presence,
         roles,
         subscribers,
+        allowed_origins,
     };
     let app_state_ws = Arc::new(app_state.clone());
 

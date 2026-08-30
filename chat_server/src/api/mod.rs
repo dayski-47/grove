@@ -26,6 +26,7 @@ pub struct AppState {
     pub presence: PresenceTracker,
     pub roles: RoleCache,
     pub subscribers: ChannelSubscribers,
+    pub allowed_origins: Vec<String>,
 }
 
 pub struct AuthenticatedUser {

@@ -1,4 +1,5 @@
 use crate::api::AppState;
+use crate::api::ratelimit::check_rate_limit;
 use crate::api::validation::validate_message_text;
 use crate::memory::message_pool::MAX_MESSAGE_SIZE;
 use crate::memory::user_pool::{User, UserFlags};
@@ -249,6 +250,14 @@ pub async fn handle_binary_message(
             if validate_message_text(&text).is_err() {
                 return Ok(());
             }
+            // 20 messages / 10s per user — the REST rate limiter only ever
+            // covered per-IP login/register/join, nothing gated actual send volume.
+            if check_rate_limit(&app_state.redis, &format!("msg:{}", user_id), 20, 10)
+                .await
+                .is_err()
+            {
+                return Ok(());
+            }
             if !is_channel_member(user_id, channel_id, &app_state.redis).await {
                 return Ok(());
             }
@@ -496,6 +505,7 @@ mod tests {
             presence: PresenceTracker::new(redis.clone()),
             roles: RoleCache::new(redis),
             subscribers: crate::memory::subscribers::ChannelSubscribers::new(),
+            allowed_origins: crate::config::allowed_origins(),
         })
     }
 

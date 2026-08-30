@@ -1,4 +1,4 @@
-use super::auth::{login, logout, register};
+use super::auth::{delete_account, login, logout, register};
 use super::messages::{
     add_friend, create_channel, get_channel_members, get_channel_online, get_channel_pins,
     get_channel_reactions, get_history, get_user, join_by_code, join_channel, kick_member,
@@ -7,6 +7,7 @@ use super::messages::{
     update_my_profile,
 };
 use crate::api::AppState;
+use axum::http::HeaderValue;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::{
     Router,
@@ -22,10 +23,17 @@ pub async fn run_rest_server(
     addr: &str,
     state: AppState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let cors_origins: Vec<HeaderValue> = state
+        .allowed_origins
+        .iter()
+        .filter_map(|o| o.parse().ok())
+        .collect();
+
     let app = Router::new()
         .route("/api/auth/register", post(register))
         .route("/api/auth/login", post(login))
         .route("/api/auth/logout", post(logout))
+        .route("/api/auth/account", axum::routing::delete(delete_account))
         .route("/api/messages/history", get(get_history))
         .route("/api/messages/reactions", get(get_channel_reactions))
         .route("/api/channels/join", post(join_channel))
@@ -62,7 +70,7 @@ pub async fn run_rest_server(
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(
             CorsLayer::new()
-                .allow_origin(Any)
+                .allow_origin(cors_origins)
                 .allow_methods(Any)
                 .allow_headers([AUTHORIZATION, CONTENT_TYPE]),
         )

@@ -1120,6 +1120,7 @@ mod tests {
             presence: crate::cache::presence::PresenceTracker::new(redis.clone()),
             roles: crate::cache::roles::RoleCache::with_prefix(redis, test_prefix),
             subscribers: crate::memory::subscribers::ChannelSubscribers::new(),
+            allowed_origins: crate::config::allowed_origins(),
         })
     }
 
