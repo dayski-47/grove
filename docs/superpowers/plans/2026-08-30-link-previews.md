@@ -19,7 +19,8 @@
 - 24h cache TTL (`link_previews.fetched_at`), keyed by SHA-256 hash of the URL string.
 - Rate limits reuse the existing `check_rate_limit` Lua limiter — `unfurl:{user_id}` 30/60s, `imgproxy:{user_id}` 60/60s.
 - Response body reads are capped at 2MB (`MAX_FETCH_BYTES`) for both endpoints — never buffer an unbounded stream.
-- **Deviation from the spec's exact wording, found during planning:** the spec described SSRF IP-pinning via `reqwest`'s `.resolve()` override — that API pins a *fixed* hostname at client-build time and doesn't fit fetching arbitrary, per-request URLs. The actual mechanism (Task 1) is a custom `reqwest::dns::Resolve` implementation that filters every DNS answer to public IPs only, installed once on the shared client — this protects the initial connection *and* every redirect hop automatically, since redirects re-resolve through the same resolver. No separate redirect-time IP check is needed.
+- **Deviation from the spec's exact wording, found during planning:** the spec described SSRF IP-pinning via `reqwest`'s `.resolve()` override — that API pins a *fixed* hostname at client-build time and doesn't fit fetching arbitrary, per-request URLs. The mechanism (Task 1) is a custom `reqwest::dns::Resolve` implementation that filters every DNS answer to public IPs only, installed once on the shared client.
+- **Second deviation, found during Task 1's own execution (not caught during planning):** the custom resolver alone is *not* sufficient — reqwest never invokes any resolver for a URL whose host is already a literal IP (e.g. `http://127.0.0.1/`), since there's nothing to resolve. Verified directly: a resolver that logs every call and unconditionally blocks was invoked 0 times for a literal-IP fetch (which then succeeded — the bypass), and 1 time for the equivalent `localhost` hostname fetch (correctly blocked). Every URL passed to the shared client — the initial request and every redirect target — must also be checked directly via `is_url_host_safe()` (Task 1) whenever its host is already an IP literal; the resolver remains the correct, sufficient mechanism for hostnames.
 - **Also found during planning:** `<img>` tags can't carry a custom `Authorization` header, so the image-proxy endpoint needs a `?token=` query-string fallback for auth — Task 5 extends the shared `AuthenticatedUser` extractor with this, mirroring the exact pattern `websocket/server.rs` already uses for the WS upgrade handshake (browsers can't set custom headers on a `WebSocket` connect either).
 
 ---
@@ -32,7 +33,7 @@
 - Modify: `chat_server/Cargo.toml`
 
 **Interfaces:**
-- Produces: `pub fn is_public_ip(ip: std::net::IpAddr) -> bool`, `pub struct SsrfSafeResolver`, `pub fn build_http_client() -> reqwest::Client`
+- Produces: `pub fn is_public_ip(ip: std::net::IpAddr) -> bool`, `pub fn is_url_host_safe(url: &url::Url) -> bool`, `pub struct SsrfSafeResolver`, `pub fn build_http_client() -> reqwest::Client`
 - Consumes: nothing new
 
 - [ ] **Step 1: Add the `reqwest` dependency**
@@ -41,7 +42,10 @@ In `chat_server/Cargo.toml`, add under `[dependencies]`:
 
 ```toml
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+url = "2"
 ```
+
+`url` is needed directly (not just through `reqwest::Url`, which doesn't re-export `Host`) — see Step 5.
 
 This pulls in `ring` as reqwest's TLS crypto backend, separate from the `aws_lc_rs` provider `main.rs` already installs process-wide for the WS server's TLS — the two coexist without conflict since neither calls `rustls::crypto::CryptoProvider::install_default()` a second time; reqwest builds its own `ClientConfig` with its own provider internally.
 
@@ -103,6 +107,8 @@ use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
+
+use url::{Host, Url};
 
 /// Rejects loopback, RFC1918, link-local (incl. `169.254.169.254`, the cloud
 /// metadata address), CGNAT, multicast, and IPv6 equivalents — the ranges an
@@ -170,12 +176,35 @@ impl Resolve for SsrfSafeResolver {
     }
 }
 
+/// Checks a URL's host directly when it's already a literal IP — the
+/// resolver never runs in that case (an IP literal has nothing to resolve),
+/// so this is the *only* enforcement point for it, both for the initial
+/// request and for every redirect hop. Hostnames are deferred to the
+/// resolver above, which already filters them correctly.
+pub fn is_url_host_safe(url: &Url) -> bool {
+    match url.host() {
+        Some(Host::Ipv4(v4)) => is_public_ip(IpAddr::V4(v4)),
+        Some(Host::Ipv6(v6)) => is_public_ip(IpAddr::V6(v6)),
+        Some(Host::Domain(_)) => true,
+        None => false,
+    }
+}
+
 /// Shared client for link unfurling and image proxying. Build once at
 /// startup and clone (cheap — internally `Arc`-backed) into `AppState`.
 pub fn build_http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .dns_resolver(Arc::new(SsrfSafeResolver))
-        .redirect(reqwest::redirect::Policy::limited(3))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 3 {
+                return attempt.stop();
+            }
+            if is_url_host_safe(attempt.url()) {
+                attempt.follow()
+            } else {
+                attempt.error("blocked redirect target: not a public IP")
+            }
+        }))
         .timeout(Duration::from_secs(5))
         .user_agent("Grove/1.0")
         .build()
@@ -194,23 +223,45 @@ Append to the `#[cfg(test)] mod tests` block (needs `#[tokio::test]`, and `axum`
 
 ```rust
     #[tokio::test]
-    async fn ssrf_safe_client_refuses_to_fetch_loopback() {
+    async fn refuses_to_fetch_a_literal_loopback_ip() {
         let app = axum::Router::new()
             .route("/", axum::routing::get(|| async { "should never be reached" }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
 
+        // The URL itself is the literal IP — this is the case the resolver
+        // alone cannot catch, since there's nothing to resolve.
+        let url = format!("http://{}/", addr);
+        assert!(!is_url_host_safe(&Url::parse(&url).unwrap()));
+
         let client = build_http_client();
-        let result = client.get(format!("http://{}/", addr)).send().await;
-        assert!(result.is_err(), "fetching a loopback address must be blocked");
+        let result = client.get(&url).send().await;
+        assert!(result.is_err(), "fetching a literal loopback IP must be blocked");
+    }
+
+    #[tokio::test]
+    async fn refuses_to_follow_a_redirect_to_a_literal_loopback_ip() {
+        let app = axum::Router::new().route(
+            "/go",
+            axum::routing::get(|| async {
+                axum::response::Redirect::temporary("http://127.0.0.1:1/nope")
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+
+        let client = build_http_client();
+        let result = client.get(format!("http://{}/go", addr)).send().await;
+        assert!(result.is_err(), "a redirect landing on a literal loopback IP must be blocked");
     }
 ```
 
 - [ ] **Step 8: Run it to verify it passes**
 
-Run: `cargo test net::ssrf::tests::ssrf_safe_client_refuses_to_fetch_loopback -- --nocapture`
-Expected: PASS
+Run: `cargo test net::ssrf -- --nocapture`
+Expected: PASS (all 4 tests)
 
 - [ ] **Step 9: Wire the module into the crate**
 
@@ -236,7 +287,7 @@ git commit -m "feat: ssrf-safe http client for outbound link fetches"
 - Modify: `chat_server/Cargo.toml`
 
 **Interfaces:**
-- Consumes: nothing from Task 1 directly (this helper takes any `&reqwest::Client`; production call sites pass the SSRF-safe one from Task 1)
+- Consumes: Task 1's `net::ssrf::is_url_host_safe` — the resolver alone doesn't cover a literal-IP URL (see Global Constraints), so this function must check the URL itself before ever sending
 - Produces: `pub const MAX_FETCH_BYTES: usize`, `pub struct CappedFetch { pub body: bytes::Bytes, pub content_type: Option<String> }`, `pub async fn fetch_capped(client: &reqwest::Client, url: &str, max_bytes: usize) -> Result<CappedFetch, FetchError>`
 
 - [ ] **Step 1: Add `futures-util`'s stream extension (already a dependency) and write the failing test**
@@ -262,10 +313,14 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
 
-        // Plain client here — this test is about the capping logic, not SSRF
-        // policy (that's covered on its own in net::ssrf).
+        // Calls the unchecked inner helper directly, on a plain client —
+        // this test is about the capping logic, not SSRF policy (that's
+        // covered on its own in net::ssrf, and by fetch_capped's own test
+        // below). fetch_capped itself always rejects a loopback target
+        // before ever sending, so testing capping through it would require
+        // a real public server.
         let client = reqwest::Client::new();
-        let result = fetch_capped(&client, &format!("http://{}/huge", addr), 2 * 1024 * 1024).await;
+        let result = fetch_capped_inner(&client, &format!("http://{}/huge", addr), 2 * 1024 * 1024).await;
         assert!(matches!(result, Err(FetchError::TooLarge)));
     }
 
@@ -280,11 +335,21 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
 
         let client = reqwest::Client::new();
-        let result = fetch_capped(&client, &format!("http://{}/small", addr), 2 * 1024 * 1024)
+        let result = fetch_capped_inner(&client, &format!("http://{}/small", addr), 2 * 1024 * 1024)
             .await
             .unwrap();
         assert_eq!(result.body.as_ref(), b"<title>tiny</title>");
         assert_eq!(result.content_type.as_deref(), Some("text/html"));
+    }
+
+    #[tokio::test]
+    async fn fetch_capped_rejects_a_loopback_target_before_sending() {
+        // The public entry point — unlike fetch_capped_inner above, this
+        // must refuse a loopback URL outright, matching Task 1's
+        // is_url_host_safe (the resolver never even runs for a literal IP).
+        let client = reqwest::Client::new();
+        let result = fetch_capped(&client, "http://127.0.0.1:1/nope", 2 * 1024 * 1024).await;
+        assert!(matches!(result, Err(FetchError::Blocked)));
     }
 }
 ```
@@ -299,6 +364,7 @@ Expected: FAIL — nothing defined yet.
 Add above the test module:
 
 ```rust
+use crate::net::ssrf::is_url_host_safe;
 use bytes::Bytes;
 use futures_util::StreamExt;
 
@@ -313,6 +379,7 @@ pub struct CappedFetch {
 pub enum FetchError {
     Request(reqwest::Error),
     TooLarge,
+    Blocked,
 }
 
 impl From<reqwest::Error> for FetchError {
@@ -321,7 +388,27 @@ impl From<reqwest::Error> for FetchError {
     }
 }
 
+/// The only entry point production code should call — checks the URL is
+/// safe to fetch before ever sending. Task 1's resolver alone doesn't cover
+/// a literal-IP URL (nothing to resolve), so this check is load-bearing,
+/// not redundant with it.
 pub async fn fetch_capped(
+    client: &reqwest::Client,
+    url: &str,
+    max_bytes: usize,
+) -> Result<CappedFetch, FetchError> {
+    let parsed = reqwest::Url::parse(url).map_err(|_| FetchError::Blocked)?;
+    if !is_url_host_safe(&parsed) {
+        return Err(FetchError::Blocked);
+    }
+    fetch_capped_inner(client, url, max_bytes).await
+}
+
+/// The actual streaming/capping logic, with no safety check of its own —
+/// exists so tests can exercise it directly against a loopback mock
+/// server without fighting the SSRF check that a real caller always goes
+/// through via fetch_capped above.
+async fn fetch_capped_inner(
     client: &reqwest::Client,
     url: &str,
     max_bytes: usize,
@@ -350,7 +437,7 @@ pub async fn fetch_capped(
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `cargo test net::fetch -- --nocapture`
-Expected: PASS (both tests)
+Expected: PASS (all 3 tests)
 
 - [ ] **Step 5: Register the module**
 
@@ -1831,4 +1918,6 @@ git commit -m "feat: render link preview cards in messages"
 
 **Placeholder scan:** the only non-final code in this plan is Task 5 Step 1's intentional `unimplemented!()` stub, which Step 3 immediately replaces with real assertions — flagged inline as deliberate, not a leftover.
 
-**Type consistency:** `UnfurlResponse` (Rust, Task 6) and `UnfurlResult` (TS, Task 9) fields match 1:1 (`available`, `url_hash`, `title`, `description`, `has_image`). `ImageProxyParams.url_hash` (Task 7) matches the `url_hash` query param `imageProxyUrl` (Task 9) constructs. `AuthenticatedUser { user_id: i64 }` (Task 5) matches every call site across Tasks 6/7. `ParsedPreview { title, description, image_url }` (Task 3) matches the fields `fetch_and_parse` (Task 6) reads. `CappedFetch { body, content_type }` (Task 2) matches both consumers (Tasks 6, 7).
+**Type consistency:** `UnfurlResponse` (Rust, Task 6) and `UnfurlResult` (TS, Task 9) fields match 1:1 (`available`, `url_hash`, `title`, `description`, `has_image`). `ImageProxyParams.url_hash` (Task 7) matches the `url_hash` query param `imageProxyUrl` (Task 9) constructs. `AuthenticatedUser { user_id: i64 }` (Task 5) matches every call site across Tasks 6/7. `ParsedPreview { title, description, image_url }` (Task 3) matches the fields `fetch_and_parse` (Task 6) reads. `CappedFetch { body, content_type }` (Task 2) matches both consumers (Tasks 6, 7); both call the checked public `fetch_capped`, never `fetch_capped_inner`, so both automatically inherit the literal-IP safety check.
+
+**Post-dispatch correction (found during Task 1's own execution, not during this review):** the original plan text here said the resolver alone covers redirects — that's true for hostnames but false for a URL whose host is already a literal IP (no resolution ever happens for one). Fixed in Task 1 (`is_url_host_safe`, a custom `redirect::Policy` instead of `Policy::limited`) and propagated into Task 2 (`fetch_capped` checks the URL before ever calling `fetch_capped_inner`). See the ledger for the verification that caught this and confirmed the fix.
