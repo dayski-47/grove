@@ -7,6 +7,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    # loopback-only so `cargo test`'s sqlx::test harness can reach it from
+    # the host without opening the db up on the network
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,6 +23,8 @@ services:
     image: redis:7-alpine
     container_name: grove_redis
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
 
