@@ -596,6 +596,15 @@ input, textarea {
   text-transform: lowercase;
 }
 
+.dw-link {
+  color: var(--leaf-bright);
+  text-decoration: none;
+}
+
+.dw-link:hover {
+  text-decoration: underline;
+}
+
 /* ── Toast notifications ─────────────────────────────────── */
 
 .gv-toast-container {

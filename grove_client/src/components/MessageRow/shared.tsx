@@ -39,6 +39,40 @@ export function formatTime(ts: number): string {
 
 /* ── Inline markdown parser ──────────────────────────────── */
 
+function trimTrailingPunctuation(url: string): string {
+    let end = url.length;
+    while (end > 0) {
+        const ch = url[end - 1];
+        const opener = ch === ")" ? "(" : ch === "]" ? "[" : ch === "}" ? "{" : null;
+
+        if (opener) {
+            const segment = url.slice(0, end);
+            const opens = segment.split(opener).length - 1;
+            const closes = segment.split(ch).length - 1;
+            if (closes <= opens) break;
+            end -= 1;
+            continue;
+        }
+
+        if (".,!?:;'\"".includes(ch)) {
+            end -= 1;
+            continue;
+        }
+
+        break;
+    }
+    return url.slice(0, end);
+}
+
+function isSafeUrl(url: string): boolean {
+    try {
+        const parsed = new URL(url);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+        return false;
+    }
+}
+
 type Check = { regex: RegExp; type: string };
 
 const CHECKS: Check[] = [
@@ -48,6 +82,7 @@ const CHECKS: Check[] = [
     { regex: /\*(.+?)\*/s,     type: "italic"  },
     { regex: /`([^`\n]+)`/,   type: "code"    },
     { regex: /@(\w+)/,         type: "mention" },
+    { regex: /https?:\/\/[^\s<]+/, type: "url" },
     { regex: /\n/,             type: "newline" },
 ];
 
@@ -95,6 +130,19 @@ export function parseMarkdown(text: string, myUsername: string): ReactNode[] {
             const name = match[1];
             const isMe = name.toLowerCase() === myUsername.toLowerCase();
             nodes.push(<span key={key++} className={`dw-mention${isMe ? " me" : ""}`}>{match[0]}</span>);
+        }
+        else if (type === "url") {
+            const trimmed = trimTrailingPunctuation(match[0]);
+            if (isSafeUrl(trimmed)) {
+                nodes.push(
+                    <a key={key++} href={trimmed} target="_blank" rel="noopener noreferrer" className="dw-link">
+                        {trimmed}
+                    </a>
+                );
+            } else {
+                nodes.push(trimmed);
+            }
+            consumedLength = trimmed.length;
         }
         else if (type === "newline") nodes.push(<br key={key++} />);
 
