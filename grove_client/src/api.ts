@@ -224,6 +224,13 @@ export async function logout(token: string): Promise<void> {
     });
 }
 
+export async function deleteAccount(token: string): Promise<void> {
+    await fetch(`${API_BASE}/api/auth/account`, {
+        method:  "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+    });
+}
+
 export async function getUserProfile(userId: number, token: string): Promise<UserProfile> {
     const res = await fetch(`${API_BASE}/api/users/${userId}`, {
         headers: { Authorization: `Bearer ${token}` },

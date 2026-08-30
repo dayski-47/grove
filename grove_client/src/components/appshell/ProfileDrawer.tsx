@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { UserProfile } from "../../types";
 import type { ActivityStatus } from "../ProfileMenu";
 import { avatarBg, avatarInitial } from "../../lib/avatar";
@@ -6,24 +7,26 @@ import { CloseIcon } from "./icons";
 export function ProfileDrawer({
     uid, isSelf, profile, username, isOnline,
     myStatus, myAbout,
-    onClose, onDm, onCall, onStatusChange, onLogout,
+    onClose, onDm, onCall, onStatusChange, onLogout, onDeleteAccount,
 }: {
-    uid:            number;
-    isSelf:         boolean;
-    profile:        UserProfile | undefined;
-    username:       string;
-    isOnline:       boolean;
-    myStatus:       ActivityStatus;
-    myAbout:        string;
-    onClose:        () => void;
-    onDm:           () => void;
-    onCall:         () => void;
-    onStatusChange: (s: ActivityStatus) => void;
-    onLogout:       () => void;
+    uid:             number;
+    isSelf:          boolean;
+    profile:         UserProfile | undefined;
+    username:        string;
+    isOnline:        boolean;
+    myStatus:        ActivityStatus;
+    myAbout:         string;
+    onClose:         () => void;
+    onDm:            () => void;
+    onCall:          () => void;
+    onStatusChange:  (s: ActivityStatus) => void;
+    onLogout:        () => void;
+    onDeleteAccount: () => void;
 }) {
     const bg      = avatarBg(uid);
     const initial = avatarInitial(username);
     const bio     = isSelf ? myAbout : (profile?.about ?? "");
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
 
     return (
         <>
@@ -76,8 +79,26 @@ export function ProfileDrawer({
                             <button className="dw-btn dw-btn-ghost"   onClick={onCall}>Call</button>
                         </>
                     )}
-                    {isSelf && (
-                        <button className="dw-btn dw-btn-danger" onClick={onLogout}>Sign out</button>
+                    {isSelf && !confirmingDelete && (
+                        <>
+                            <button className="dw-btn dw-btn-danger" onClick={onLogout}>Sign out</button>
+                            <button className="dw-btn-text-danger" onClick={() => setConfirmingDelete(true)}>
+                                Delete account
+                            </button>
+                        </>
+                    )}
+                    {isSelf && confirmingDelete && (
+                        <div className="dw-delete-confirm">
+                            <p>This permanently removes your account. It can't be undone.</p>
+                            <div className="dw-delete-confirm-actions">
+                                <button className="dw-btn dw-btn-ghost" onClick={() => setConfirmingDelete(false)}>
+                                    Cancel
+                                </button>
+                                <button className="dw-btn dw-btn-danger" onClick={onDeleteAccount}>
+                                    Confirm delete
+                                </button>
+                            </div>
+                        </div>
                     )}
                 </div>
             </aside>

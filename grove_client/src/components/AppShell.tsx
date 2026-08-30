@@ -4,7 +4,7 @@ import { GroveSocket } from "../socket";
 import {
     getHistory, joinChannel, createChannel, listChannels,
     openDm, listDms, listFriends, addFriend, removeFriend,
-    getChannelReactions, logout, getUserProfile,
+    getChannelReactions, logout, deleteAccount, getUserProfile,
     getChannelPins, pinMessage, unpinMessage, searchUsers,
     joinByCode, getChannelMembers,
 } from "../api";
@@ -774,6 +774,11 @@ export function AppShell({
         onLogout();
     }
 
+    async function handleDeleteAccount() {
+        await deleteAccount(token).catch(() => {});
+        onLogout();
+    }
+
     /* ── Palette items ──────────────────────────────────── */
 
     const q = paletteQuery.trim().toLowerCase();
@@ -1539,6 +1544,7 @@ export function AppShell({
                     onCall={() => { initiateCall(drawerUid); setDrawerOpen(false); }}
                     onStatusChange={handleStatusChange}
                     onLogout={handleLogout}
+                    onDeleteAccount={handleDeleteAccount}
                 />
             )}
 

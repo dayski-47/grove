@@ -257,6 +257,15 @@ export function LoginScreen({ onLogin }: { onLogin: () => void }) {
                 >
                     {loading ? <LoadingSpinner /> : mode === "login" ? "sign in" : "create account"}
                 </button>
+
+                {mode === "register" && (
+                    <p className="dw-login-legal">
+                        by creating an account you agree to the{" "}
+                        <a href="/terms.html" target="_blank" rel="noopener noreferrer">terms</a>
+                        {" "}and{" "}
+                        <a href="/privacy.html" target="_blank" rel="noopener noreferrer">privacy policy</a>
+                    </p>
+                )}
             </div>
         </div>
     );
