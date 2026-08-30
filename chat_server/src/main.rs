@@ -3,6 +3,7 @@ mod cache;
 mod config;
 mod database;
 mod memory;
+mod net;
 mod protocol;
 mod signaling;
 mod websocket;
