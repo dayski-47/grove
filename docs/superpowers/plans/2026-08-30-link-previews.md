@@ -983,7 +983,7 @@ git commit -m "feat: allow a query-string token as an auth fallback"
 - Modify: `chat_server/src/api/mod.rs` (add `pub mod links;`, add `http_client` field to `AppState`)
 - Modify: `chat_server/src/api/server.rs` (register the route)
 - Modify: `chat_server/src/main.rs` (build the client, wire into `AppState`)
-- Modify: `chat_server/src/api/messages.rs`, `chat_server/src/websocket/handler.rs` (their `make_app_state`/`make_state` test helpers need the new field)
+- Modify: `chat_server/src/api/messages.rs`, `chat_server/src/websocket/handler.rs`, `chat_server/src/api/auth.rs` (their `make_app_state` test helpers need the new field — confirmed via `grep -rln "AppState {" src/` that these three plus `main.rs` are every existing site; there will be a *fifth*, `api/mod.rs`'s own `make_state` from Task 5, by the time this task runs)
 - Modify: `chat_server/Cargo.toml`
 
 **Interfaces:**
@@ -1014,11 +1014,15 @@ In `chat_server/src/main.rs`, after `let allowed_origins = config::allowed_origi
 
 And add `http_client,` to the `AppState { ... }` construction.
 
-In `chat_server/src/api/messages.rs`'s `make_app_state` and `chat_server/src/websocket/handler.rs`'s `make_app_state` (both already updated once before for `allowed_origins` — same pattern), add:
+In `chat_server/src/api/messages.rs`'s `make_app_state`, `chat_server/src/websocket/handler.rs`'s `make_app_state`, and `chat_server/src/api/auth.rs`'s `make_app_state` (all three already updated once before for `allowed_origins` — same pattern), add:
 
 ```rust
             http_client: crate::net::ssrf::build_http_client(),
 ```
+
+Also check `chat_server/src/api/mod.rs` for a `make_state` helper inside its `#[cfg(test)] mod tests` — Task 5 added one there, and it needs the same field added the same way.
+
+**Every one of these — never `reqwest::Client::new()` as a shortcut to make the build pass.** A plain client skips the SSRF protection entirely; even in test-only code, that's the kind of thing that gets copy-pasted into production later.
 
 - [ ] **Step 3: Confirm the crate builds with the new field wired everywhere**
 
@@ -1718,15 +1722,12 @@ export function LinkPreviewCard({ url }: { url: string }) {
 
 - [ ] **Step 3: Wire it into `MessageBody.tsx`**
 
-In `grove_client/src/components/MessageRow/MessageBody.tsx`, add the import:
+In `grove_client/src/components/MessageRow/MessageBody.tsx`, `useMemo` is **already imported** (`import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";`) — do not add a second `react` import line, it would collide. Add only:
 
 ```tsx
-import { useMemo } from "react"; // add to the existing react import line if useMemo isn't already imported
 import { LinkPreviewCard } from "./LinkPreviewCard";
 import { extractFirstUrl } from "./shared";
 ```
-
-(Check the existing `import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";` line first — `useMemo` is likely already imported; if so, skip re-adding it.)
 
 Inside the `MessageBody` function body, after the existing hooks (`poppingEmojis`, etc.) and before the `return`:
 
