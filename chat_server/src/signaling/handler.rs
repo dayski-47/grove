@@ -1,17 +1,17 @@
 use crate::signaling::types::SignalingMessage;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::sync::RwLock;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 pub struct SignalingServer {
-    connections: RwLock<HashMap<u64, mpsc::UnboundedSender<WsMessage>>>,
+    connections: RwLock<FxHashMap<u64, mpsc::UnboundedSender<WsMessage>>>,
 }
 
 impl SignalingServer {
     pub fn new() -> Self {
         Self {
-            connections: RwLock::new(HashMap::new()),
+            connections: RwLock::new(FxHashMap::default()),
         }
     }
 

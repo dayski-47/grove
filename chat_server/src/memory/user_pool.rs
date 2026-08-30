@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -67,13 +67,13 @@ impl User {
 }
 
 pub struct UserPool {
-    users: RwLock<HashMap<u64, User>>,
+    users: RwLock<FxHashMap<u64, User>>,
 }
 
 impl UserPool {
     pub fn new() -> Self {
         Self {
-            users: RwLock::new(HashMap::new()),
+            users: RwLock::new(FxHashMap::default()),
         }
     }
 

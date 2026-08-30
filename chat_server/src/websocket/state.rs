@@ -1,7 +1,7 @@
 use crate::memory::message_pool::MessagePool;
 use crate::memory::user_pool::{UserPool, UserStatus};
 use crate::signaling::handler::SignalingServer;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
 use tokio::sync::mpsc;
@@ -10,7 +10,7 @@ use tokio_tungstenite::tungstenite::Message as WsMessage;
 pub type UserId = u64;
 
 pub struct ServerState {
-    pub connections: RwLock<HashMap<UserId, mpsc::UnboundedSender<WsMessage>>>,
+    pub connections: RwLock<FxHashMap<UserId, mpsc::UnboundedSender<WsMessage>>>,
     pub signaling: SignalingServer,
     pub user_pool: UserPool,
     pub msg_pool: Arc<MessagePool>,
@@ -19,7 +19,7 @@ pub struct ServerState {
 impl ServerState {
     pub fn new() -> Self {
         Self {
-            connections: RwLock::new(HashMap::new()),
+            connections: RwLock::new(FxHashMap::default()),
             signaling: SignalingServer::new(),
             user_pool: UserPool::new(),
             msg_pool: Arc::new(MessagePool::new()),

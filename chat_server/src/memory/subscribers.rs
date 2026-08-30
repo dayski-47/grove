@@ -1,19 +1,22 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::{Arc, RwLock};
 
 /// In-memory mirror of Redis's `channel:{id}:members` sets, so
 /// `broadcast_to_channel` can fan out a message without a Redis round-trip
 /// per frame. Fan-out only — `is_channel_member` still gates against Redis
 /// directly, so staleness here never affects who can read or send.
+///
+/// Keyed by plain u64 IDs, not attacker-controlled strings, so the default
+/// SipHash's DoS resistance buys nothing here — Fx trades that for speed.
 #[derive(Clone)]
 pub struct ChannelSubscribers {
-    inner: Arc<RwLock<HashMap<u64, HashSet<u64>>>>,
+    inner: Arc<RwLock<FxHashMap<u64, FxHashSet<u64>>>>,
 }
 
 impl ChannelSubscribers {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(RwLock::new(HashMap::new())),
+            inner: Arc::new(RwLock::new(FxHashMap::default())),
         }
     }
 
