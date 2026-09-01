@@ -40,6 +40,8 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedUser {
         parts: &mut Parts,
         state: &Arc<AppState>,
     ) -> Result<Self, Self::Rejection> {
+        let header_present = parts.headers.contains_key("Authorization");
+
         let header_token = parts
             .headers
             .get("Authorization")
@@ -49,9 +51,11 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedUser {
 
         // Some requests can't carry a custom header at all — an <img> tag
         // driven fetch is one, the same constraint the WS upgrade handshake
-        // already works around with a query-string token.
-        let query_token = header_token
-            .is_none()
+        // already works around with a query-string token. Gate on whether
+        // the header is *present*, not on whether it parsed — a header
+        // that's present but malformed/wrong-scheme must hard-fail 401
+        // rather than silently falling through to a query token.
+        let query_token = (!header_present)
             .then(|| {
                 parts.uri.query().and_then(|q| {
                     q.split('&')
@@ -201,6 +205,29 @@ mod tests {
         // `AuthenticatedUser` intentionally doesn't derive `Debug` (it's the
         // auth boundary's success type), so `unwrap_err` isn't available —
         // match on the rejection directly instead.
+        assert!(matches!(result, Err(StatusCode::UNAUTHORIZED)));
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn malformed_header_is_not_silently_replaced_by_a_valid_query_token(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let state = make_state(pool).await;
+        let query_token = mint(2, &state.jwt_secret);
+
+        // A well-formed but wrong-scheme Authorization header, paired with a
+        // valid query token. The header is *present*, so it must never fall
+        // through to the query string — this must hard-fail 401, not
+        // authenticate as the query token's identity.
+        let req = Request::builder()
+            .uri(format!("/whatever?token={query_token}"))
+            .header("Authorization", "Basic dXNlcjpwYXNz")
+            .body(())
+            .unwrap();
+        let (mut parts, _) = req.into_parts();
+
+        let result = AuthenticatedUser::from_request_parts(&mut parts, &state).await;
         assert!(matches!(result, Err(StatusCode::UNAUTHORIZED)));
         Ok(())
     }
