@@ -284,16 +284,33 @@ mod tests {
 
     #[tokio::test]
     async fn redirect_policy_blocks_a_redirect_to_a_different_loopback_target() {
-        let app = axum::Router::new().route(
+        // Server B: the redirect target. If the policy is broken (e.g.
+        // mutated to always Follow), this WILL be reached — that's what
+        // makes this test mutation-proof, unlike a dead-port target which
+        // fails the connection regardless of policy correctness.
+        let server_b = axum::Router::new().route(
+            "/should-never-be-reached",
+            axum::routing::get(|| async { "reached server B" }),
+        );
+        let listener_b = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr_b = listener_b.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener_b, server_b).await.unwrap();
+        });
+
+        // Server A: redirects to server B.
+        let redirect_target = format!("http://{}/should-never-be-reached", addr_b);
+        let server_a = axum::Router::new().route(
             "/redirect-to-loopback",
-            axum::routing::get(|| async {
-                axum::response::Redirect::temporary("http://127.0.0.1:1/nope")
+            axum::routing::get(move || {
+                let target = redirect_target.clone();
+                async move { axum::response::Redirect::temporary(&target) }
             }),
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener_a = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr_a = listener_a.local_addr().unwrap();
         tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
+            axum::serve(listener_a, server_a).await.unwrap();
         });
 
         // Initial request goes through the RAW client, not get_checked —
@@ -303,12 +320,13 @@ mod tests {
         // invokes it regardless of how the initial request was sent.
         let client = build_http_client();
         let result = client
-            .get(format!("http://{}/redirect-to-loopback", addr))
+            .get(format!("http://{}/redirect-to-loopback", addr_a))
             .send()
             .await;
         assert!(
             result.is_err(),
-            "a redirect landing on a literal loopback IP must be blocked"
+            "a redirect landing on a different loopback target must be blocked \
+             (if this fails, the request actually reached server B)"
         );
     }
 }
