@@ -2,6 +2,7 @@ mod api;
 mod cache;
 mod config;
 mod database;
+mod links;
 mod memory;
 mod net;
 mod protocol;
