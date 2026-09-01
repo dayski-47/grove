@@ -1,5 +1,5 @@
 use super::auth::{delete_account, login, logout, register};
-use super::links::unfurl;
+use super::links::{image_proxy, unfurl};
 use super::messages::{
     add_friend, create_channel, get_channel_members, get_channel_online, get_channel_pins,
     get_channel_reactions, get_history, get_user, join_by_code, join_channel, kick_member,
@@ -68,6 +68,7 @@ pub async fn run_rest_server(
         .route("/api/messages/pin", post(pin_message))
         .route("/api/messages/unpin", post(unpin_message))
         .route("/api/links/unfurl", post(unfurl))
+        .route("/api/links/image-proxy", get(image_proxy))
         .layer(CompressionLayer::new())
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(

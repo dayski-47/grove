@@ -4,6 +4,8 @@ use crate::api::ratelimit::check_rate_limit;
 use crate::database::link_previews;
 use crate::links::preview::{self, ParsedPreview};
 use crate::net::fetch::{self, MAX_FETCH_BYTES};
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -104,6 +106,42 @@ pub async fn unfurl(
     } else {
         unavailable()
     }))
+}
+
+#[derive(Deserialize)]
+pub struct ImageProxyParams {
+    pub url_hash: String,
+}
+
+pub async fn image_proxy(
+    auth: AuthenticatedUser,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<ImageProxyParams>,
+) -> Result<Response, StatusCode> {
+    check_rate_limit(&state.redis, &format!("imgproxy:{}", auth.user_id), 60, 60).await?;
+
+    let image_url = link_previews::get_image_url(&state.db, &params.url_hash)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let capped = fetch::fetch_capped(&state.http_client, &image_url, MAX_FETCH_BYTES)
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    let content_type = capped
+        .content_type
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "public, max-age=86400".to_string()),
+        ],
+        capped.body,
+    )
+        .into_response())
 }
 
 async fn fetch_and_parse(client: &reqwest::Client, url: &str) -> Option<ParsedPreview> {
@@ -241,6 +279,75 @@ mod tests {
         .unwrap();
 
         assert!(!result.0.available);
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn returns_404_for_an_unknown_hash(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_state(pool).await;
+        let result = image_proxy(
+            AuthenticatedUser { user_id: 1 },
+            State(state),
+            axum::extract::Query(ImageProxyParams {
+                url_hash: "nope".to_string(),
+            }),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn returns_404_when_the_cached_row_has_no_image(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let state = make_state(pool).await;
+        let hash = url_hash("https://example.com/no-image");
+        link_previews::upsert(
+            &state.db,
+            &hash,
+            "https://example.com/no-image",
+            Some("T"),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let result = image_proxy(
+            AuthenticatedUser { user_id: 1 },
+            State(state),
+            axum::extract::Query(ImageProxyParams { url_hash: hash }),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn a_cached_row_pointing_at_an_internal_address_fails_without_panicking(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        // The image proxy applies the same SSRF protection as unfurl — this
+        // confirms it degrades to an error response, not a panic or a leak.
+        let state = make_state(pool).await;
+        let hash = url_hash("https://example.com/bad-image");
+        link_previews::upsert(
+            &state.db,
+            &hash,
+            "https://example.com/bad-image",
+            None,
+            None,
+            Some("http://127.0.0.1:1/nope"),
+        )
+        .await
+        .unwrap();
+
+        let result = image_proxy(
+            AuthenticatedUser { user_id: 1 },
+            State(state),
+            axum::extract::Query(ImageProxyParams { url_hash: hash }),
+        )
+        .await;
+        assert!(result.is_err());
         Ok(())
     }
 }
