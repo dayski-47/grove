@@ -39,7 +39,7 @@ export function formatTime(ts: number): string {
 
 /* ── Inline markdown parser ──────────────────────────────── */
 
-function trimTrailingPunctuation(url: string): string {
+export function trimTrailingPunctuation(url: string): string {
     let end = url.length;
     while (end > 0) {
         const ch = url[end - 1];
@@ -64,6 +64,21 @@ function trimTrailingPunctuation(url: string): string {
     return url.slice(0, end);
 }
 
+function trimTrailingMarkdownMarkers(url: string): string {
+    let end = url.length;
+    while (end > 0 && "*_~`".includes(url[end - 1])) end -= 1;
+    return url.slice(0, end);
+}
+
+/** First URL in a message, if any — used for the link-preview card, kept
+ *  separate from parseMarkdown's own URL handling since it needs the raw
+ *  match regardless of what markdown wraps it. */
+export function extractFirstUrl(text: string): string | undefined {
+    const m = URL_PATTERN.exec(text);
+    if (!m) return undefined;
+    return trimTrailingMarkdownMarkers(trimTrailingPunctuation(m[0]));
+}
+
 function isSafeUrl(url: string): boolean {
     try {
         const parsed = new URL(url);
@@ -75,6 +90,8 @@ function isSafeUrl(url: string): boolean {
 
 type Check = { regex: RegExp; type: string };
 
+const URL_PATTERN = /https?:\/\/[^\s<]+/;
+
 const CHECKS: Check[] = [
     { regex: /```([^\n]*)\n([\s\S]*?)```/, type: "codeblock" },
     { regex: /\*\*(.+?)\*\*/s, type: "bold"    },
@@ -82,7 +99,7 @@ const CHECKS: Check[] = [
     { regex: /\*(.+?)\*/s,     type: "italic"  },
     { regex: /`([^`\n]+)`/,   type: "code"    },
     { regex: /@(\w+)/,         type: "mention" },
-    { regex: /https?:\/\/[^\s<]+/, type: "url" },
+    { regex: URL_PATTERN, type: "url" },
     { regex: /\n/,             type: "newline" },
 ];
 

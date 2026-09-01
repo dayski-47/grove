@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseMarkdown } from "./shared";
+import { parseMarkdown, extractFirstUrl } from "./shared";
 
 describe("parseMarkdown — code blocks", () => {
     it("renders a fenced block with no language tag as a pre>code pair", () => {
@@ -146,5 +146,41 @@ describe("parseMarkdown — cross-feature interactions", () => {
         expect(langEl.props.children).toBe("c++");
         const codeEl = pre.props.children[1];
         expect(codeEl.props.children).toBe("int x;");
+    });
+});
+
+describe("extractFirstUrl", () => {
+    it("returns the first url in a message with plain text around it", () => {
+        expect(extractFirstUrl("check this out https://example.com/page it is cool")).toBe("https://example.com/page");
+    });
+
+    it("returns undefined when there is no url", () => {
+        expect(extractFirstUrl("no url here at all")).toBeUndefined();
+    });
+
+    it("keeps balanced parens in a wikipedia-style url", () => {
+        expect(extractFirstUrl("see https://en.wikipedia.org/wiki/Rust_(programming_language) for docs.")).toBe(
+            "https://en.wikipedia.org/wiki/Rust_(programming_language)"
+        );
+    });
+
+    it("only returns the first of multiple urls", () => {
+        expect(extractFirstUrl("two links https://a.com and https://b.com")).toBe("https://a.com");
+    });
+
+    it("strips trailing markdown bold markers", () => {
+        expect(extractFirstUrl("wrapped in md **https://example.com/bold**")).toBe("https://example.com/bold");
+    });
+
+    it("strips trailing punctuation that follows markdown markers", () => {
+        expect(extractFirstUrl("wrapped in md **https://example.com/bold**.")).toBe("https://example.com/bold");
+    });
+
+    it("strips trailing strikethrough markers before trailing punctuation", () => {
+        expect(extractFirstUrl("strike ~~https://x.com~~,")).toBe("https://x.com");
+    });
+
+    it("strips a trailing inline-code backtick", () => {
+        expect(extractFirstUrl("code `https://x.com/code`")).toBe("https://x.com/code");
     });
 });
