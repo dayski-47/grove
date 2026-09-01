@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
-import { parseMarkdown, QUICK_EMOJIS, type ReactionInfo } from "./shared";
+import { parseMarkdown, QUICK_EMOJIS, type ReactionInfo, extractFirstUrl } from "./shared";
 import type { DisplayMessage } from "../MessageList";
+import { LinkPreviewCard } from "./LinkPreviewCard";
 
 interface MessageBodyProps {
     m:            DisplayMessage;
@@ -46,6 +47,11 @@ export function MessageBody({
         prevCountsRef.current = next;
     });
 
+    const previewUrl = useMemo(
+        () => (!m.deleted && !isEditing ? extractFirstUrl(m.text) : undefined),
+        [m.text, m.deleted, isEditing],
+    );
+
     function handleEditKey(e: KeyboardEvent<HTMLInputElement>) {
         if (e.key === "Enter")  { e.preventDefault(); onEditSubmit(); }
         if (e.key === "Escape") onEditCancel();
@@ -75,6 +81,8 @@ export function MessageBody({
                     </div>
                 )}
             </div>
+
+            {previewUrl && <LinkPreviewCard url={previewUrl} />}
 
             {msgReactions.length > 0 && (
                 <div className="dw-reactions" aria-label="Reactions">

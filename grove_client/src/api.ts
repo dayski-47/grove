@@ -231,6 +231,33 @@ export async function deleteAccount(token: string): Promise<void> {
     });
 }
 
+export interface UnfurlResult {
+    available:   boolean;
+    url_hash:    string | null;
+    title:       string | null;
+    description: string | null;
+    has_image:   boolean;
+}
+
+export async function unfurlLink(url: string, token: string): Promise<UnfurlResult> {
+    const res = await fetch(`${API_BASE}/api/links/unfurl`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ url }),
+    });
+    if (!res.ok) {
+        return { available: false, url_hash: null, title: null, description: null, has_image: false };
+    }
+    return res.json();
+}
+
+// <img> tags can't carry a custom Authorization header, so this embeds the
+// token as a query param instead — the backend's AuthenticatedUser
+// extractor accepts either (see chat_server/src/api/mod.rs).
+export function imageProxyUrl(urlHash: string, token: string): string {
+    return `${API_BASE}/api/links/image-proxy?url_hash=${encodeURIComponent(urlHash)}&token=${encodeURIComponent(token)}`;
+}
+
 export async function getUserProfile(userId: number, token: string): Promise<UserProfile> {
     const res = await fetch(`${API_BASE}/api/users/${userId}`, {
         headers: { Authorization: `Bearer ${token}` },
