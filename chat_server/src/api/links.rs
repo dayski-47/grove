@@ -710,14 +710,31 @@ mod tests {
 
         let result = image_proxy(
             ImageProxyAuth { user_id: 1 },
-            State(state),
-            axum::extract::Query(ImageProxyParams { url_hash: hash }),
+            State(state.clone()),
+            axum::extract::Query(ImageProxyParams {
+                url_hash: hash.clone(),
+            }),
         )
         .await;
         assert_eq!(
             result.unwrap_err(),
             StatusCode::BAD_GATEWAY,
             "a real fetched text/html response must be rejected by the real handler, not streamed through"
+        );
+
+        // The cache write sits after the content-type check in image_proxy
+        // today; this is the regression guard for that ordering. If a
+        // future refactor ever moved cache_put_image ahead of the allowlist
+        // check, this rejected text/html response would land in Redis and
+        // get served back as a cache hit on the next request — the same
+        // class of cache-poisoning bug the allowlist itself exists to
+        // prevent, just reached through the cache instead of the direct
+        // fetch path. The assertion above alone can't catch that: it would
+        // keep passing even if the response were cached, since caching
+        // doesn't change what this call returns.
+        assert!(
+            cache_get_image(&state.redis, &hash).await.is_none(),
+            "a rejected text/html response must never be written to the image cache"
         );
         Ok(())
     }
