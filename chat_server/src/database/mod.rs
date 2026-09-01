@@ -1,3 +1,4 @@
+pub mod link_previews;
 pub mod messages;
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
