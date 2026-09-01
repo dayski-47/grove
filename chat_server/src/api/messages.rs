@@ -1121,6 +1121,7 @@ mod tests {
             roles: crate::cache::roles::RoleCache::with_prefix(redis, test_prefix),
             subscribers: crate::memory::subscribers::ChannelSubscribers::new(),
             allowed_origins: crate::config::allowed_origins(),
+            http_client: crate::net::ssrf::build_http_client(),
         })
     }
 

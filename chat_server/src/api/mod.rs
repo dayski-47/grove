@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod invite_code;
+pub mod links;
 pub mod messages;
 pub mod ratelimit;
 pub mod server;
@@ -27,6 +28,7 @@ pub struct AppState {
     pub roles: RoleCache,
     pub subscribers: ChannelSubscribers,
     pub allowed_origins: Vec<String>,
+    pub http_client: reqwest::Client,
 }
 
 pub struct AuthenticatedUser {
@@ -120,6 +122,7 @@ mod tests {
             roles: crate::cache::roles::RoleCache::with_prefix(redis, test_prefix),
             subscribers: crate::memory::subscribers::ChannelSubscribers::new(),
             allowed_origins: crate::config::allowed_origins(),
+            http_client: crate::net::ssrf::build_http_client(),
         })
     }
 

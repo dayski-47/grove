@@ -506,6 +506,7 @@ mod tests {
             roles: RoleCache::new(redis),
             subscribers: crate::memory::subscribers::ChannelSubscribers::new(),
             allowed_origins: crate::config::allowed_origins(),
+            http_client: crate::net::ssrf::build_http_client(),
         })
     }
 

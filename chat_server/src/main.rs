@@ -39,6 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let roles = cache::roles::RoleCache::new(redis_conn.clone());
     let subscribers = memory::subscribers::ChannelSubscribers::new();
     let allowed_origins = config::allowed_origins();
+    let http_client = net::ssrf::build_http_client();
 
     let app_state = api::AppState {
         db: db_pool,
@@ -48,6 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         roles,
         subscribers,
         allowed_origins,
+        http_client,
     };
     let app_state_ws = Arc::new(app_state.clone());
 
