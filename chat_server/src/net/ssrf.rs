@@ -151,7 +151,6 @@ pub enum GetCheckedError {
 /// caller-supplied URL — checks the target host, including the literal-IP
 /// case the resolver can't see, before ever connecting. `build_http_client`
 /// alone is not sufficient; this is the actual safe primitive.
-#[allow(dead_code)]
 pub async fn get_checked(
     client: &reqwest::Client,
     url: &str,
