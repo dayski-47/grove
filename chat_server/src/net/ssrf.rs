@@ -54,6 +54,22 @@ fn is_public_ipv6(ip: Ipv6Addr) -> bool {
     true
 }
 
+/// Reserved hostname that resolves straight to loopback in test builds only.
+/// Lets `#[cfg(test)]` code drive a real HTTP request through the full
+/// SSRF-checked path (`get_checked` -> `SsrfSafeResolver`) against an
+/// in-process mock server, without weakening `is_url_host_safe`'s literal-IP
+/// handling at all — this hostname is never a literal IP, so it's an
+/// ordinary `Host::Domain` as far as that function is concerned, and every
+/// existing literal-IP test is completely unaffected.
+///
+/// `#[cfg(test)]` means this constant, and the branch in `resolve` below
+/// that checks it, are compiled out entirely for a release build — not
+/// merely inert at runtime. There is no code path by which this can ship.
+/// Picked from the `.invalid` TLD (reserved by RFC 2606) so it can never
+/// collide with a real, resolvable domain.
+#[cfg(test)]
+pub const TEST_LOOPBACK_HOST: &str = "grove-test-loopback.invalid";
+
 /// A DNS resolver that filters every answer to public IPs only — protects
 /// hostname-based requests and DNS rebinding. Does NOT run for a URL whose
 /// host is already a literal IP (nothing to resolve); `get_checked` below
@@ -66,6 +82,16 @@ impl Resolve for SsrfSafeResolver {
     fn resolve(&self, name: Name) -> Resolving {
         Box::pin(async move {
             let host = name.as_str().to_string();
+
+            #[cfg(test)]
+            if host == TEST_LOOPBACK_HOST {
+                let iter: Addrs = Box::new(std::iter::once(SocketAddr::from((
+                    IpAddr::V4(Ipv4Addr::LOCALHOST),
+                    0,
+                ))));
+                return Ok(iter);
+            }
+
             let addrs = tokio::net::lookup_host((host.as_str(), 0)).await?;
             let filtered: Vec<SocketAddr> = addrs.filter(|a| is_public_ip(a.ip())).collect();
             let iter: Addrs = Box::new(filtered.into_iter());
@@ -322,6 +348,45 @@ mod tests {
         // whether the target would also have been blocked.
         let url = Url::parse("http://127.0.0.1/nope").unwrap();
         assert_eq!(redirect_decision(&url, 4), RedirectDecision::StopAtCap);
+    }
+
+    #[tokio::test]
+    async fn get_checked_reaches_a_mock_server_via_the_reserved_test_loopback_host() {
+        // Proves the whole test-only seam actually works end to end: the
+        // reserved hostname is an ordinary domain to is_url_host_safe (never
+        // touches its literal-IP branch), so get_checked lets it through to
+        // the resolver, which — only under #[cfg(test)] — hands back
+        // loopback instead of doing a real DNS lookup. The mock server's
+        // *own* bound port comes from the URL, not from the resolver (which
+        // always answers with port 0, same as the production lookup_host
+        // call above) — this test is itself the confirmation that reqwest
+        // connects on the URL's port, not the resolver's.
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::get(|| async { "reached via test seam" }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = build_http_client();
+        let url = format!("http://{}:{}/", TEST_LOOPBACK_HOST, addr.port());
+        let resp = get_checked(&client, &url)
+            .await
+            .expect("the reserved test hostname must resolve to loopback through get_checked");
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+        assert_eq!(resp.text().await.unwrap(), "reached via test seam");
+    }
+
+    #[test]
+    fn the_reserved_test_loopback_host_does_not_touch_the_literal_ip_branch() {
+        // is_url_host_safe sees this hostname as an ordinary Host::Domain —
+        // it never enters the Ipv4/Ipv6 branches that the literal-IP tests
+        // above cover, so this seam cannot weaken that enforcement.
+        let url = Url::parse(&format!("http://{TEST_LOOPBACK_HOST}/x")).unwrap();
+        assert!(is_url_host_safe(&url));
     }
 
     #[tokio::test]

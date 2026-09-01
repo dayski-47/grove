@@ -4,6 +4,8 @@ use scraper::{Html, Selector};
 const TITLE_MAX_CHARS: usize = 300;
 #[allow(dead_code)]
 const DESCRIPTION_MAX_CHARS: usize = 500;
+#[allow(dead_code)]
+const IMAGE_URL_MAX_CHARS: usize = 2048;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct ParsedPreview {
@@ -44,7 +46,8 @@ pub fn parse_preview_html(html: &str) -> ParsedPreview {
         .next()
         .and_then(|el| el.value().attr("content"))
         .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+        .filter(|s| !s.is_empty())
+        .map(|s| truncate_chars(&s, IMAGE_URL_MAX_CHARS));
 
     ParsedPreview {
         title,
@@ -127,5 +130,15 @@ mod tests {
         let html = format!("<html><head><title>{long_title}</title></head></html>");
         let result = parse_preview_html(&html);
         assert!(result.title.unwrap().chars().count() <= 300);
+    }
+
+    #[test]
+    fn truncates_an_absurdly_long_image_url() {
+        let long_path = "a".repeat(5000);
+        let html = format!(
+            r#"<html><head><meta property="og:image" content="https://example.com/{long_path}"></head></html>"#
+        );
+        let result = parse_preview_html(&html);
+        assert!(result.image_url.unwrap().chars().count() <= 2048);
     }
 }

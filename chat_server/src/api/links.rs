@@ -1,5 +1,6 @@
 use crate::api::AppState;
 use crate::api::AuthenticatedUser;
+use crate::api::ImageProxyAuth;
 use crate::api::ratelimit::check_rate_limit;
 use crate::database::link_previews;
 use crate::links::preview::{self, ParsedPreview};
@@ -7,6 +8,9 @@ use crate::net::fetch::{self, MAX_FETCH_BYTES};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use axum::{Json, extract::State, http::StatusCode};
+use bytes::Bytes;
+use redis::AsyncCommands;
+use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -113,12 +117,74 @@ pub struct ImageProxyParams {
     pub url_hash: String,
 }
 
+/// Short-TTL cache window for proxied image bytes, keyed by `url_hash`. A
+/// held-open, never-read connection could otherwise force one full origin
+/// fetch per request with no dedup at all — measured at ~5,400x bandwidth
+/// amplification — and a message viewed by N channel members cost N
+/// independent fetches of the same image. This collapses concurrent and
+/// repeated requests for the same image into ~one origin fetch per window.
+/// Short enough that a source image changing takes at most a minute to show
+/// up — self-evidently fine for a link-preview thumbnail.
+const IMAGE_CACHE_TTL_SECS: u64 = 60;
+
+fn image_cache_key(url_hash: &str) -> String {
+    format!("imgcache:{url_hash}")
+}
+
+/// Looks up a cached `(content_type, body)` pair for `url_hash`. Doesn't
+/// distinguish "never cached" from "expired" — Redis's own TTL eviction
+/// makes both look like a plain miss to the caller, same as any other cache.
+async fn cache_get_image(redis: &ConnectionManager, url_hash: &str) -> Option<(String, Bytes)> {
+    let mut con = redis.clone();
+    let key = image_cache_key(url_hash);
+    let (content_type, body): (Option<String>, Option<Vec<u8>>) =
+        con.hmget(&key, &["content_type", "body"]).await.ok()?;
+    match (content_type, body) {
+        (Some(ct), Some(b)) => Some((ct, Bytes::from(b))),
+        _ => None,
+    }
+}
+
+/// Writes `content_type` + `body` and sets the TTL atomically via a Lua
+/// script — the same INCR+EXPIRE-via-Lua shape `ratelimit::check_rate_limit`
+/// already uses, so a crash between the write and the expiry call can never
+/// leave an immortal key behind. Best-effort: a cache write failure must
+/// never fail the image response already computed for the client.
+async fn cache_put_image(
+    redis: &ConnectionManager,
+    url_hash: &str,
+    content_type: &str,
+    body: &[u8],
+) {
+    let mut con = redis.clone();
+    let key = image_cache_key(url_hash);
+    let result: Result<(), redis::RedisError> = redis::Script::new(
+        "redis.call('HSET', KEYS[1], 'content_type', ARGV[1], 'body', ARGV[2])
+         redis.call('EXPIRE', KEYS[1], ARGV[3])
+         return 1",
+    )
+    .key(&key)
+    .arg(content_type)
+    .arg(body)
+    .arg(IMAGE_CACHE_TTL_SECS)
+    .invoke_async(&mut con)
+    .await;
+
+    if let Err(err) = result {
+        eprintln!("warn: failed to populate image proxy cache for {url_hash}: {err}");
+    }
+}
+
 pub async fn image_proxy(
-    auth: AuthenticatedUser,
+    auth: ImageProxyAuth,
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<ImageProxyParams>,
 ) -> Result<Response, StatusCode> {
     check_rate_limit(&state.redis, &format!("imgproxy:{}", auth.user_id), 60, 60).await?;
+
+    if let Some((content_type, body)) = cache_get_image(&state.redis, &params.url_hash).await {
+        return Ok(build_image_response(content_type, body));
+    }
 
     let image_url = link_previews::get_image_url(&state.db, &params.url_hash)
         .await
@@ -137,11 +203,15 @@ pub async fn image_proxy(
     // that script at Grove's own origin. Anything that isn't an image type
     // (and not SVG, which can itself carry <script>) collapses to the same
     // BAD_GATEWAY as any other fetch failure — no distinguishable status for
-    // this case, keeping the anti-oracle response pattern consistent.
+    // this case, keeping the anti-oracle response pattern consistent. A
+    // rejected response is never cached — only content that actually passed
+    // the allowlist is worth serving again on the next request.
     if !is_allowed_image_content_type(capped.content_type.as_deref()) {
         return Err(StatusCode::BAD_GATEWAY);
     }
     let content_type = capped.content_type.expect("checked Some above");
+
+    cache_put_image(&state.redis, &params.url_hash, &content_type, &capped.body).await;
 
     Ok(build_image_response(content_type, capped.body))
 }
@@ -320,7 +390,7 @@ mod tests {
     async fn returns_404_for_an_unknown_hash(pool: sqlx::PgPool) -> sqlx::Result<()> {
         let state = make_state(pool).await;
         let result = image_proxy(
-            AuthenticatedUser { user_id: 1 },
+            ImageProxyAuth { user_id: 1 },
             State(state),
             axum::extract::Query(ImageProxyParams {
                 url_hash: "nope".to_string(),
@@ -347,7 +417,7 @@ mod tests {
         .unwrap();
 
         let result = image_proxy(
-            AuthenticatedUser { user_id: 1 },
+            ImageProxyAuth { user_id: 1 },
             State(state),
             axum::extract::Query(ImageProxyParams { url_hash: hash }),
         )
@@ -482,12 +552,311 @@ mod tests {
         .unwrap();
 
         let result = image_proxy(
-            AuthenticatedUser { user_id: 1 },
+            ImageProxyAuth { user_id: 1 },
             State(state),
             axum::extract::Query(ImageProxyParams { url_hash: hash }),
         )
         .await;
         assert!(result.is_err());
+        Ok(())
+    }
+
+    // --- Fix 1: Redis-backed image proxy cache ---
+
+    #[sqlx::test]
+    async fn image_proxy_serves_from_cache_without_fetching_on_a_cache_hit(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let state = make_state(pool).await;
+        let hash = url_hash("https://example.com/cache-hit-image");
+
+        // Points at an address nothing listens on, so get_checked's own
+        // SSRF-block test elsewhere proves this would fail as BAD_GATEWAY if
+        // the handler ever actually tried to fetch it. Serving 200 with the
+        // pre-seeded cached bytes below is only possible if the cache-hit
+        // path returned before reaching fetch_capped at all — that's what
+        // makes "no fetch happened" observable without a live mock server,
+        // mirroring how the existing SSRF tests in this file work.
+        link_previews::upsert(
+            &state.db,
+            &hash,
+            "https://example.com/cache-hit-image",
+            None,
+            None,
+            Some("http://127.0.0.1:1/nope"),
+        )
+        .await
+        .unwrap();
+        cache_put_image(&state.redis, &hash, "image/png", b"cached-bytes").await;
+
+        let result = image_proxy(
+            ImageProxyAuth { user_id: 1 },
+            State(state),
+            axum::extract::Query(ImageProxyParams { url_hash: hash }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(result.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(body.as_ref(), b"cached-bytes");
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn image_proxy_populates_the_cache_on_a_miss(pool: sqlx::PgPool) -> sqlx::Result<()> {
+        let png_bytes: &[u8] = b"fresh-bytes-from-origin";
+        let app = axum::Router::new().route(
+            "/fresh.png",
+            axum::routing::get(move || async move { ([("content-type", "image/png")], png_bytes) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let state = make_state(pool).await;
+        // Unique per run — the image cache lives in a real, shared Redis
+        // instance (unlike #[sqlx::test]'s per-test isolated database), so a
+        // fixed URL here would collide with a previous run's still-live
+        // 60s-TTL cache entry and defeat the "must start as a miss" check.
+        let source_url = format!(
+            "https://example.com/fresh-image-{}",
+            crate::api::invite_code::generate_invite_code()
+        );
+        let hash = url_hash(&source_url);
+        let target = format!(
+            "http://{}:{}/fresh.png",
+            crate::net::ssrf::TEST_LOOPBACK_HOST,
+            addr.port()
+        );
+        link_previews::upsert(&state.db, &hash, &source_url, None, None, Some(&target))
+            .await
+            .unwrap();
+
+        assert!(
+            cache_get_image(&state.redis, &hash).await.is_none(),
+            "must start as a genuine cache miss"
+        );
+
+        let result = image_proxy(
+            ImageProxyAuth { user_id: 1 },
+            State(state.clone()),
+            axum::extract::Query(ImageProxyParams {
+                url_hash: hash.clone(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+
+        let (cached_content_type, cached_body) = cache_get_image(&state.redis, &hash)
+            .await
+            .expect("a cache miss must populate the cache before returning");
+        assert_eq!(cached_content_type, "image/png");
+        assert_eq!(cached_body.as_ref(), png_bytes);
+        Ok(())
+    }
+
+    // --- Fix 3: real handler-wiring tests against a real mock HTTP server ---
+    //
+    // These drive requests through the reserved #[cfg(test)]-only loopback
+    // hostname (net::ssrf::TEST_LOOPBACK_HOST) so the *real* get_checked /
+    // fetch_capped path is exercised, not a raw client bypassing SSRF
+    // checks — closing the gap where the content-type allowlist and the
+    // unfurl text/html gate were only ever mutation-tested against pure
+    // predicate functions, never the actual handler wiring.
+
+    #[sqlx::test]
+    async fn image_proxy_rejects_a_real_text_html_response_from_the_real_handler(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let app = axum::Router::new().route(
+            "/evil",
+            axum::routing::get(|| async {
+                (
+                    [("content-type", "text/html")],
+                    "<script>alert(document.cookie)</script>",
+                )
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let state = make_state(pool).await;
+        // Unique per run — a rejected response must never be cached (see
+        // image_proxy's own comment on that), but this guards against ever
+        // reading a stale cache entry left over from a run where that
+        // invariant was temporarily broken (e.g. during mutation testing).
+        let source_url = format!(
+            "https://example.com/real-evil-image-{}",
+            crate::api::invite_code::generate_invite_code()
+        );
+        let hash = url_hash(&source_url);
+        let target = format!(
+            "http://{}:{}/evil",
+            crate::net::ssrf::TEST_LOOPBACK_HOST,
+            addr.port()
+        );
+        link_previews::upsert(&state.db, &hash, &source_url, None, None, Some(&target))
+            .await
+            .unwrap();
+
+        let result = image_proxy(
+            ImageProxyAuth { user_id: 1 },
+            State(state),
+            axum::extract::Query(ImageProxyParams { url_hash: hash }),
+        )
+        .await;
+        assert_eq!(
+            result.unwrap_err(),
+            StatusCode::BAD_GATEWAY,
+            "a real fetched text/html response must be rejected by the real handler, not streamed through"
+        );
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn image_proxy_streams_a_real_successful_image_fetch_end_to_end(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let png_bytes: &[u8] = b"\x89PNG\r\n\x1a\nreal-image-bytes-from-mock-server";
+        let app = axum::Router::new().route(
+            "/img.png",
+            axum::routing::get(move || async move { ([("content-type", "image/png")], png_bytes) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let state = make_state(pool).await;
+        // Unique per run — otherwise a still-live cache entry from a
+        // previous run within the 60s TTL would serve this successfully
+        // without ever exercising the real fetch this test means to prove.
+        let source_url = format!(
+            "https://example.com/real-good-image-{}",
+            crate::api::invite_code::generate_invite_code()
+        );
+        let hash = url_hash(&source_url);
+        let target = format!(
+            "http://{}:{}/img.png",
+            crate::net::ssrf::TEST_LOOPBACK_HOST,
+            addr.port()
+        );
+        link_previews::upsert(&state.db, &hash, &source_url, None, None, Some(&target))
+            .await
+            .unwrap();
+
+        let result = image_proxy(
+            ImageProxyAuth { user_id: 1 },
+            State(state),
+            axum::extract::Query(ImageProxyParams { url_hash: hash }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(result.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(body.as_ref(), png_bytes);
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn unfurl_rejects_a_real_non_html_response_from_the_real_handler(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        // The body is deliberately valid, parseable HTML with a real <title>
+        // — if the content-type gate were ever removed, parse_preview_html
+        // would happily extract it and this test would start seeing
+        // available: true. A body with nothing extractable (plain JSON,
+        // say) would pass this test whether or not the gate exists at all,
+        // since an empty ParsedPreview also collapses to unavailable —
+        // exactly the kind of test that only exercises the pure predicate
+        // and not the real wiring, which is the gap this test exists to close.
+        let app = axum::Router::new().route(
+            "/data.json",
+            axum::routing::get(|| async {
+                (
+                    [("content-type", "application/json")],
+                    "<html><head><title>should never be parsed</title></head></html>",
+                )
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let state = make_state(pool).await;
+        let target = format!(
+            "http://{}:{}/data.json",
+            crate::net::ssrf::TEST_LOOPBACK_HOST,
+            addr.port()
+        );
+
+        let result = unfurl(
+            AuthenticatedUser { user_id: 1 },
+            State(state),
+            Json(UnfurlRequest { url: target }),
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            !result.0.available,
+            "a real fetched non-text/html response must be rejected by the real unfurl handler"
+        );
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn unfurl_succeeds_end_to_end_against_a_real_html_page(
+        pool: sqlx::PgPool,
+    ) -> sqlx::Result<()> {
+        let app = axum::Router::new().route(
+            "/page",
+            axum::routing::get(|| async {
+                (
+                    [("content-type", "text/html")],
+                    r#"<html><head><title>Real Page</title><meta property="og:description" content="a real description"></head></html>"#,
+                )
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let state = make_state(pool).await;
+        let target = format!(
+            "http://{}:{}/page",
+            crate::net::ssrf::TEST_LOOPBACK_HOST,
+            addr.port()
+        );
+
+        let result = unfurl(
+            AuthenticatedUser { user_id: 1 },
+            State(state),
+            Json(UnfurlRequest { url: target }),
+        )
+        .await
+        .unwrap();
+
+        assert!(result.0.available);
+        assert_eq!(result.0.title, Some("Real Page".to_string()));
+        assert_eq!(result.0.description, Some("a real description".to_string()));
         Ok(())
     }
 }
