@@ -79,8 +79,21 @@ impl Resolve for SsrfSafeResolver {
 /// so this is the *only* enforcement point for it, both for the initial
 /// request and for every redirect hop. Hostnames are deferred to the
 /// resolver above, which already filters them correctly.
+///
+/// Only `http`/`https` are accepted. For WHATWG "special" schemes the `url`
+/// crate types a literal IP host correctly, so the checks below can see it —
+/// but for non-special schemes (`redis://`, `gopher://`, `file://host/path`,
+/// arbitrary custom schemes) even a literal `127.0.0.1` or
+/// `169.254.169.254` host is left as an opaque `Host::Domain(_)` string,
+/// which would otherwise fall through to the "defer to DNS" branch below and
+/// pass unchecked. Rejecting the scheme up front closes that gap and keeps
+/// this the single place both callers (`unfurl`, `image_proxy`, via
+/// `get_checked`) need to trust.
 #[allow(dead_code)]
 pub fn is_url_host_safe(url: &Url) -> bool {
+    if url.scheme() != "http" && url.scheme() != "https" {
+        return false;
+    }
     match url.host() {
         Some(Host::Ipv4(v4)) => is_public_ip(IpAddr::V4(v4)),
         Some(Host::Ipv6(v6)) => is_public_ip(IpAddr::V6(v6)),
@@ -252,6 +265,36 @@ mod tests {
             result.is_ok(),
             "documents that the raw client does not self-protect — use get_checked"
         );
+    }
+
+    #[test]
+    fn is_url_host_safe_blocks_a_non_http_scheme_with_a_literal_loopback_host() {
+        // The `url` crate leaves a literal IP as an opaque Host::Domain(_)
+        // for non-special schemes like redis:// — without the scheme check
+        // this would incorrectly fall through the Host::Domain(_) => true
+        // branch and pass as safe.
+        let url = Url::parse("redis://127.0.0.1:6379/").unwrap();
+        assert!(!is_url_host_safe(&url));
+    }
+
+    #[test]
+    fn is_url_host_safe_blocks_a_file_scheme_with_an_internal_host() {
+        let url = Url::parse("file://internal-host/secret").unwrap();
+        assert!(!is_url_host_safe(&url));
+    }
+
+    #[test]
+    fn is_url_host_safe_allows_an_ordinary_public_https_hostname() {
+        let url = Url::parse("https://example.com/img.png").unwrap();
+        assert!(is_url_host_safe(&url));
+    }
+
+    #[test]
+    fn is_url_host_safe_still_blocks_a_literal_loopback_ip_over_http() {
+        // Pre-existing behavior — confirms the new scheme check doesn't
+        // regress the original literal-IP enforcement for http(s).
+        let url = Url::parse("http://127.0.0.1/x").unwrap();
+        assert!(!is_url_host_safe(&url));
     }
 
     #[test]

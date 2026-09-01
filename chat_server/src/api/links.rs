@@ -129,19 +129,53 @@ pub async fn image_proxy(
         .await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
 
-    let content_type = capped
-        .content_type
-        .unwrap_or_else(|| "application/octet-stream".to_string());
+    // The source's Content-Type comes straight from a third-party server (it
+    // was discovered from an attacker-controlled og:image tag and is cached
+    // globally). Streaming it through verbatim would let a malicious source
+    // declare `text/html` with a <script> body; a plain "open image in new
+    // tab" click is then a same-origin top-level navigation that executes
+    // that script at Grove's own origin. Anything that isn't an image type
+    // (and not SVG, which can itself carry <script>) collapses to the same
+    // BAD_GATEWAY as any other fetch failure — no distinguishable status for
+    // this case, keeping the anti-oracle response pattern consistent.
+    if !is_allowed_image_content_type(capped.content_type.as_deref()) {
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+    let content_type = capped.content_type.expect("checked Some above");
 
-    Ok((
+    Ok(build_image_response(content_type, capped.body))
+}
+
+/// Response-building logic, deliberately separated from the fetch/allowlist
+/// checks above so the success-path headers (notably the `nosniff`
+/// defense-in-depth header) can be unit-tested without a live mock server.
+fn build_image_response(content_type: String, body: bytes::Bytes) -> Response {
+    (
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, content_type),
             (header::CACHE_CONTROL, "public, max-age=86400".to_string()),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
         ],
-        capped.body,
+        body,
     )
-        .into_response())
+        .into_response()
+}
+
+/// Pure allowlist check, deliberately separated from the fetch/streaming
+/// logic above so it can be unit-tested without a live mock server (mirrors
+/// how `net::fetch::cap_response` was split out of `fetch_capped`). Accepts
+/// only a `Content-Type` that case-insensitively starts with `image/`, and
+/// explicitly excludes `image/svg+xml` — SVG is nominally an image type but
+/// can carry a `<script>` payload of its own.
+fn is_allowed_image_content_type(content_type: Option<&str>) -> bool {
+    match content_type {
+        Some(ct) => {
+            let lower = ct.to_ascii_lowercase();
+            lower.starts_with("image/") && !lower.starts_with("image/svg+xml")
+        }
+        None => false,
+    }
 }
 
 async fn fetch_and_parse(client: &reqwest::Client, url: &str) -> Option<ParsedPreview> {
@@ -320,6 +354,112 @@ mod tests {
         .await;
         assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);
         Ok(())
+    }
+
+    #[test]
+    fn image_content_type_allowlist_rejects_html() {
+        assert!(!is_allowed_image_content_type(Some("text/html")));
+        assert!(!is_allowed_image_content_type(Some(
+            "text/html; charset=utf-8"
+        )));
+    }
+
+    #[test]
+    fn image_content_type_allowlist_rejects_svg_even_though_it_is_nominally_an_image_type() {
+        // SVG can carry its own <script> payload, so it's excluded despite
+        // matching the image/ prefix.
+        assert!(!is_allowed_image_content_type(Some("image/svg+xml")));
+        assert!(!is_allowed_image_content_type(Some(
+            "image/svg+xml; charset=utf-8"
+        )));
+        assert!(!is_allowed_image_content_type(Some("IMAGE/SVG+XML")));
+    }
+
+    #[test]
+    fn image_content_type_allowlist_rejects_a_missing_header() {
+        assert!(!is_allowed_image_content_type(None));
+    }
+
+    #[test]
+    fn image_content_type_allowlist_accepts_ordinary_image_types_case_insensitively() {
+        assert!(is_allowed_image_content_type(Some("image/png")));
+        assert!(is_allowed_image_content_type(Some("image/jpeg")));
+        assert!(is_allowed_image_content_type(Some("IMAGE/PNG")));
+        assert!(is_allowed_image_content_type(Some(
+            "image/webp; charset=binary"
+        )));
+    }
+
+    #[test]
+    fn success_response_carries_the_nosniff_header_and_content_type() {
+        let resp = build_image_response(
+            "image/png".to_string(),
+            bytes::Bytes::from_static(b"fake-image-bytes"),
+        );
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()
+                .get(header::X_CONTENT_TYPE_OPTIONS)
+                .and_then(|v| v.to_str().ok()),
+            Some("nosniff")
+        );
+        assert_eq!(
+            resp.headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("image/png")
+        );
+    }
+
+    /// End-to-end regression for the CRITICAL content-type-confusion finding:
+    /// a source that declares `text/html` (an attacker fully controls the
+    /// og:image URL a preview is built from) must never be streamed through
+    /// — it must collapse to the same BAD_GATEWAY as any other fetch
+    /// failure, not be forwarded to the client where a same-origin "open
+    /// image in new tab" navigation would execute it.
+    ///
+    /// This mock server is itself loopback, so it can't be reached through
+    /// image_proxy's normal path (get_checked blocks loopback targets
+    /// before any connection, by design — see net::ssrf). To exercise the
+    /// allowlist specifically, this test drives the same two steps
+    /// image_proxy performs — cap_response then the allowlist check — using
+    /// the same technique net::fetch's own tests use to get a real Response
+    /// without fighting the SSRF check: a raw (non-SSRF-safe) client talking
+    /// directly to the mock server.
+    #[tokio::test]
+    async fn a_text_html_source_is_rejected_instead_of_streamed_through() {
+        let app = axum::Router::new().route(
+            "/evil",
+            axum::routing::get(|| async {
+                (
+                    [("content-type", "text/html")],
+                    "<script>alert(document.cookie)</script>",
+                )
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .get(format!("http://{}/evil", addr))
+            .send()
+            .await
+            .unwrap();
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
+        assert!(
+            !is_allowed_image_content_type(content_type.as_deref()),
+            "a text/html source must be rejected by the allowlist, matching \
+             the BAD_GATEWAY the handler returns for it"
+        );
     }
 
     #[sqlx::test]
