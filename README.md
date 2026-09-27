@@ -1,6 +1,6 @@
 # Grove
 
-A low-latency chat + voice app for gaming and dev sessions. Darkwood aesthetic — dark OLED minimal meets dark fantasy forest.
+A low-latency chat + voice app for gaming and dev sessions. Darkwood aesthetic - dark OLED minimal meets dark fantasy forest.
 
 ## Stack
 
